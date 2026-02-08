@@ -1,8 +1,10 @@
+import { program } from 'commander';
 import { config } from './config/index.js';
 import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import * as winston from 'winston';
 import { PrismaClient } from '@prisma/client';
+import { exportToCSV } from './utils/exportCSV.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const puppeteer = puppeteerExtra as any;
@@ -23,6 +25,18 @@ const logger = winston.createLogger({
 });
 
 const prisma = new PrismaClient();
+
+// Parse CLI arguments
+program
+    .name('swarm-lead-scraper')
+    .description('Scrapes business leads from Google Maps')
+    .requiredOption('-q, --query <string>', 'Search query (e.g., "dentists in tbilisi")')
+    .option('-m, --max <number>', 'Maximum results to scrape', '20')
+    .option('--headless', 'Run browser in headless mode')
+    .option('-o, --output <path>', 'Custom CSV output path')
+    .parse();
+
+const options = program.opts();
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function collectResultLinks(page: any): Promise<string[]> {
@@ -134,14 +148,21 @@ async function openResultAndExtract(page: any, href: string) {
 }
 
 async function main() {
+    const searchQuery = options.query as string;
+    const maxResults = parseInt(options.max as string, 10);
+    const headlessMode = options.headless || config.HEADLESS;
+    
     logger.info('🚀 Launching Multi-Result Scraper...');
+    logger.info(`📝 Query: "${searchQuery}"`);
+    logger.info(`🎯 Max Results: ${maxResults}`);
+    logger.info(`👁️  Headless: ${headlessMode}`);
 
     try {
         await prisma.$connect();
         logger.info('🔌 Connected to DB via Prisma');
 
         const browser = await puppeteer.launch({
-            headless: config.HEADLESS,
+            headless: headlessMode,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=en-US']
         });
         const page = await browser.newPage();
@@ -153,8 +174,7 @@ async function main() {
         });
 
         // 1. Search
-        const searchQuery = 'dentists in tbilisi';
-        const url = `https://www.google.com/maps/search/${searchQuery.replace(' ', '+')}?hl=en`;
+        const url = `https://www.google.com/maps/search/${searchQuery.replace(/ /g, '+')}?hl=en`;
         logger.info(`🔍 Searching: ${url}`);
         
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -163,8 +183,10 @@ async function main() {
         const allLinks = await collectResultLinks(page);
         
         // 3. Process Links
-        const linksToProcess = allLinks.slice(0, config.MAX_RESULTS);
+        const linksToProcess = allLinks.slice(0, maxResults);
         logger.info(`📋 Processing first ${linksToProcess.length} of ${allLinks.length} links...`);
+
+        const scrapedCompanies = [];
 
         for (let i = 0; i < linksToProcess.length; i++) {
             const link = linksToProcess[i];
@@ -186,6 +208,7 @@ async function main() {
                         }
                     });
                     logger.info(`💾 Saved ID: ${company.id}`);
+                    scrapedCompanies.push(company);
                 } else {
                     logger.warn('⚠️ Skipping unknown name.');
                 }
@@ -199,6 +222,14 @@ async function main() {
         }
         
         logger.info('🏁 Batch processing complete.');
+        
+        // Export to CSV
+        if (scrapedCompanies.length > 0) {
+            const csvPath = exportToCSV(scrapedCompanies, options.output);
+            logger.info(`✅ CSV exported to: ${csvPath}`);
+        } else {
+            logger.warn('⚠️ No companies scraped, skipping CSV export.');
+        }
         
         await browser.close();
         await prisma.$disconnect();
