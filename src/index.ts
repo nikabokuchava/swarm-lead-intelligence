@@ -1,3 +1,4 @@
+import { config } from './config/index.js';
 import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import * as winston from 'winston';
@@ -17,7 +18,7 @@ const logger = winston.createLogger({
     ),
     transports: [
         new winston.transports.Console(),
-        new winston.transports.File({ filename: 'scraper.log' })
+        new winston.transports.File({ filename: config.LOG_FILE })
     ]
 });
 
@@ -51,7 +52,7 @@ async function collectResultLinks(page: any): Promise<string[]> {
         });
 
         // Wait for potential load
-        await new Promise(r => setTimeout(r, 1200));
+        await new Promise(r => setTimeout(r, config.SCROLL_DELAY_MS));
 
         // Check count
         const currentLinks = await page.evaluate((sel: string) => {
@@ -134,14 +135,13 @@ async function openResultAndExtract(page: any, href: string) {
 
 async function main() {
     logger.info('🚀 Launching Multi-Result Scraper...');
-    const MAX_RESULTS = 20;
 
     try {
         await prisma.$connect();
         logger.info('🔌 Connected to DB via Prisma');
 
         const browser = await puppeteer.launch({
-            headless: false,
+            headless: config.HEADLESS,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=en-US']
         });
         const page = await browser.newPage();
@@ -163,7 +163,7 @@ async function main() {
         const allLinks = await collectResultLinks(page);
         
         // 3. Process Links
-        const linksToProcess = allLinks.slice(0, MAX_RESULTS);
+        const linksToProcess = allLinks.slice(0, config.MAX_RESULTS);
         logger.info(`📋 Processing first ${linksToProcess.length} of ${allLinks.length} links...`);
 
         for (let i = 0; i < linksToProcess.length; i++) {
