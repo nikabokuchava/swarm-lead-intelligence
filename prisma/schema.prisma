@@ -4,16 +4,45 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = "postgresql://admin:[REDACTED-DB-PASSWORD]@localhost:5432/swarm_leads"
 }
 
-model Lead {
-  id        Int      @id @default(autoincrement())
+model Company {
+  id        String    @id @default(uuid())
   name      String
-  phone     String?
-  email     String?
   website   String?
+  phone     String?
   address   String?
-  source    String   @default("google_maps")
-  createdAt DateTime @default(now())
+  source    String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  contacts  Contact[]
+  
+  @@map("companies")
+}
+
+model Contact {
+  id              String   @id @default(uuid())
+  companyId       String   @map("company_id")
+  fullName        String   @map("full_name")
+  title           String?
+  linkedinUrl     String?  @map("linkedin_url")
+  workEmail       String?  @map("work_email")
+  confidenceScore Float?   @map("confidence_score")
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@map("contacts")
+}
+
+model ScrapeJob {
+  id           String    @id @default(uuid())
+  query        String
+  status       String    @default("pending")
+  maxResults   Int?      @map("max_results")
+  resultsFound Int       @default(0) @map("results_found")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  completedAt  DateTime? @map("completed_at")
+  
+  @@map("scrape_jobs")
 }
