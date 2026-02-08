@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = "postgresql://admin:[REDACTED-DB-PASSWORD]@localhost:5432/swarm_leads"
+  url      = env("DATABASE_URL")
 }
 
 model Company {
