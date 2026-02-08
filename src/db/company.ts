@@ -1,0 +1,75 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+interface CompanyData {
+    name: string;
+    phone: string | null;
+    website: string | null;
+    address: string | null;
+    source: string;
+}
+
+/**
+ * Check if a company already exists by name and address
+ */
+export async function findExistingCompany(name: string, address: string | null): Promise<boolean> {
+    const existing = await prisma.company.findFirst({
+        where: {
+            name: name,
+            address: address || undefined
+        }
+    });
+    return existing !== null;
+}
+
+/**
+ * Create a new company if it doesn't already exist
+ * Returns the company if created, null if duplicate
+ */
+export async function createCompanyIfNotExists(data: CompanyData) {
+    // Check for duplicate
+    const isDuplicate = await findExistingCompany(data.name, data.address);
+    
+    if (isDuplicate) {
+        return { company: null, isDuplicate: true };
+    }
+
+    // Create new company
+    const company = await prisma.company.create({
+        data: {
+            name: data.name,
+            phone: data.phone,
+            website: data.website,
+            address: data.address,
+            source: data.source
+        }
+    });
+
+    return { company, isDuplicate: false };
+}
+
+/**
+ * Get all companies
+ */
+export async function getAllCompanies() {
+    return prisma.company.findMany({
+        orderBy: { createdAt: 'desc' }
+    });
+}
+
+/**
+ * Connect to database
+ */
+export async function connectDB() {
+    await prisma.$connect();
+}
+
+/**
+ * Disconnect from database
+ */
+export async function disconnectDB() {
+    await prisma.$disconnect();
+}
+
+export { prisma };

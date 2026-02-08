@@ -3,7 +3,8 @@ import { config } from './config/index.js';
 import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import * as winston from 'winston';
-import { PrismaClient } from '@prisma/client';
+import cliProgress from 'cli-progress';
+import { connectDB, disconnectDB, createCompanyIfNotExists } from './db/company.js';
 import { exportToCSV } from './utils/exportCSV.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,8 +24,6 @@ const logger = winston.createLogger({
         new winston.transports.File({ filename: config.LOG_FILE })
     ]
 });
-
-const prisma = new PrismaClient();
 
 // Parse CLI arguments
 program
@@ -158,7 +157,7 @@ async function main() {
     logger.info(`👁️  Headless: ${headlessMode}`);
 
     try {
-        await prisma.$connect();
+        await connectDB();
         logger.info('🔌 Connected to DB via Prisma');
 
         const browser = await puppeteer.launch({
@@ -187,56 +186,78 @@ async function main() {
         logger.info(`📋 Processing first ${linksToProcess.length} of ${allLinks.length} links...`);
 
         const scrapedCompanies = [];
+        let duplicateCount = 0;
+        let failedCount = 0;
+
+        // Create progress bar
+        const progressBar = new cliProgress.SingleBar({
+            format: '📊 Progress |{bar}| {percentage}% | {value}/{total} | {status}',
+            barCompleteChar: '█',
+            barIncompleteChar: '░',
+            hideCursor: true
+        }, cliProgress.Presets.shades_classic);
+        
+        progressBar.start(linksToProcess.length, 0, { status: 'Starting...' });
 
         for (let i = 0; i < linksToProcess.length; i++) {
             const link = linksToProcess[i];
-            logger.info(`--- [${i + 1}/${linksToProcess.length}] ---`);
             
             try {
                 const data = await openResultAndExtract(page, link);
-                logger.info(`✅ Extracted: ${data.name}`);
+                progressBar.update(i + 1, { status: `Extracted: ${data.name.substring(0, 30)}...` });
 
-                // Save to DB
-                 if (data.name !== 'Unknown Name') {
-                    const company = await prisma.company.create({
-                        data: {
-                            name: data.name,
-                            phone: data.phone,
-                            website: data.website,
-                            address: data.address,
-                            source: 'google_maps_multi'
-                        }
+                // Save to DB with deduplication
+                if (data.name !== 'Unknown Name') {
+                    const result = await createCompanyIfNotExists({
+                        name: data.name,
+                        phone: data.phone,
+                        website: data.website,
+                        address: data.address,
+                        source: 'google_maps'
                     });
-                    logger.info(`💾 Saved ID: ${company.id}`);
-                    scrapedCompanies.push(company);
-                } else {
-                    logger.warn('⚠️ Skipping unknown name.');
+                    
+                    if (result.isDuplicate) {
+                        duplicateCount++;
+                        logger.debug(`⚠️ Duplicate skipped: ${data.name}`);
+                    } else if (result.company) {
+                        scrapedCompanies.push(result.company);
+                    }
                 }
 
             } catch (err: unknown) {
-                 logger.error(`❌ Failed to process item ${i}:`, err);
+                failedCount++;
+                logger.error(`❌ Failed to process item ${i}:`, err);
             }
 
             // Small delay between items
             await new Promise(r => setTimeout(r, 1000));
         }
         
-        logger.info('🏁 Batch processing complete.');
+        progressBar.stop();
+        
+        // Summary
+        console.log('\n🏁 Batch processing complete!');
+        console.log(`   ✅ Saved: ${scrapedCompanies.length}`);
+        console.log(`   ⚠️  Duplicates skipped: ${duplicateCount}`);
+        console.log(`   ❌ Failed: ${failedCount}`);
+        
+        logger.info(`Summary: saved=${scrapedCompanies.length}, duplicates=${duplicateCount}, failed=${failedCount}`);
         
         // Export to CSV
         if (scrapedCompanies.length > 0) {
             const csvPath = exportToCSV(scrapedCompanies, options.output);
-            logger.info(`✅ CSV exported to: ${csvPath}`);
+            console.log(`   💾 CSV: ${csvPath}`);
+            logger.info(`CSV exported to: ${csvPath}`);
         } else {
-            logger.warn('⚠️ No companies scraped, skipping CSV export.');
+            console.log('   💾 CSV: Skipped (no new companies)');
         }
         
         await browser.close();
-        await prisma.$disconnect();
+        await disconnectDB();
 
     } catch (error) {
         logger.error('❌ Fatal Error:', error);
-        await prisma.$disconnect();
+        await disconnectDB();
     }
 }
 
