@@ -4,9 +4,10 @@ import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import * as winston from 'winston';
 import cliProgress from 'cli-progress';
-import { connectDB, disconnectDB, createCompanyIfNotExists } from './db/company.js';
+import { connectDB, disconnectDB, createCompanyIfNotExists, getCompaniesWithoutEmails, updateCompanyEmails } from './db/company.js';
 import { createScrapeJob, completeJob, failJob, listScrapeJobs } from './db/scrapeJob.js';
 import { exportToCSV } from './utils/exportCSV.js';
+import { scrapeEmailsFromWebsite, createEmailScraperPage } from './scraper/websiteScraper.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const puppeteer = puppeteerExtra as any;
@@ -35,6 +36,8 @@ program
     .option('--headless', 'Run browser in headless mode')
     .option('-o, --output <path>', 'Custom CSV output path')
     .option('--list-jobs', 'List recent scrape jobs')
+    .option('--with-emails', 'Extract emails from company websites after scraping')
+    .option('--email-only', 'Extract emails for existing companies without emails')
     .parse();
 
 const options = program.opts();

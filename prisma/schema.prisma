@@ -8,14 +8,17 @@ datasource db {
 }
 
 model Company {
-  id        String    @id @default(uuid())
-  name      String
-  website   String?
-  phone     String?
-  address   String?
-  source    String?
-  createdAt DateTime  @default(now()) @map("created_at")
-  contacts  Contact[]
+  id             String    @id @default(uuid())
+  name           String
+  website        String?
+  phone          String?
+  address        String?
+  source         String?
+  emails         String[]  @default([])
+  emailScraped   Boolean   @default(false) @map("email_scraped")
+  emailScrapedAt DateTime? @map("email_scraped_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  contacts       Contact[]
   
   @@map("companies")
 }

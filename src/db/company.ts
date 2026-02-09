@@ -59,6 +59,34 @@ export async function getAllCompanies() {
 }
 
 /**
+ * Get companies that haven't been email scraped yet
+ */
+export async function getCompaniesWithoutEmails(limit = 50) {
+    return prisma.company.findMany({
+        where: {
+            emailScraped: false,
+            website: { not: null }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit
+    });
+}
+
+/**
+ * Update company with extracted emails
+ */
+export async function updateCompanyEmails(companyId: string, emails: string[]) {
+    return prisma.company.update({
+        where: { id: companyId },
+        data: {
+            emails: emails,
+            emailScraped: true,
+            emailScrapedAt: new Date()
+        }
+    });
+}
+
+/**
  * Connect to database
  */
 export async function connectDB() {
