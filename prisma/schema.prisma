@@ -7,20 +7,35 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model Company {
-  id             String    @id @default(uuid())
+  id             String           @id @default(uuid())
   name           String
   website        String?
   phone          String?
   address        String?
   source         String?
-  emails         String[]  @default([])
-  emailScraped   Boolean   @default(false) @map("email_scraped")
-  emailScrapedAt DateTime? @map("email_scraped_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
+  emails         String[]         @default([])
+  emailScraped   Boolean          @default(false) @map("email_scraped")
+  emailScrapedAt DateTime?        @map("email_scraped_at")
+  
+  // Job Queue Fields
+  status         ProcessingStatus @default(PENDING)
+  workerId       String?          @map("worker_id")
+  lockedAt       DateTime?        @map("locked_at")
+  retries        Int              @default(0)
+  
+  createdAt      DateTime         @default(now()) @map("created_at")
   contacts       Contact[]
   
   @@map("companies")
+  @@index([status, createdAt]) // Optimize queue polling
 }
 
 model Contact {
@@ -30,8 +45,13 @@ model Contact {
   title           String?
   linkedinUrl     String?  @map("linkedin_url")
   workEmail       String?  @map("work_email")
-  confidenceScore Float?   @map("confidence_score")
+  jobId           String?  @map("job_id") // Optional relation to ScrapeJob
+  emailSource     String?  @map("email_source") // REGEX, LLM, HYBRID
+  emailType       String?  @map("email_type")   // personal, generic
+  confidenceScore Float?   @map("confidence_score") // 0-100
   createdAt       DateTime @default(now()) @map("created_at")
+  
+  scrapeJob ScrapeJob? @relation(fields: [jobId], references: [id])
   
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   
@@ -46,6 +66,7 @@ model ScrapeJob {
   resultsFound Int       @default(0) @map("results_found")
   createdAt    DateTime  @default(now()) @map("created_at")
   completedAt  DateTime? @map("completed_at")
+  contacts     Contact[]
   
   @@map("scrape_jobs")
 }

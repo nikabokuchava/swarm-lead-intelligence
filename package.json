@@ -7,17 +7,21 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "start": "node dist/src/index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.26",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@prisma/client": "^5.22.0",
     "@types/cli-progress": "^3.11.6",
-    "@types/node": "^25.2.0",
+    "@types/sanitize-html": "^2.16.0",
+    "ai": "^6.0.78",
     "cli-progress": "^3.12.0",
     "commander": "^13.0.0",
     "dotenv": "^16.4.7",
@@ -25,17 +29,21 @@
     "puppeteer": "^24.36.1",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "winston": "^3.19.0"
+    "sanitize-html": "^2.17.0",
+    "winston": "^3.19.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@types/node": "^25.2.2",
     "@types/pg": "^8.16.0",
     "eslint": "^9.39.2",
     "globals": "^17.3.0",
     "prisma": "^5.22.0",
+    "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript-eslint": "^8.54.0"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0",
+    "vitest": "^4.0.18"
   }
 }

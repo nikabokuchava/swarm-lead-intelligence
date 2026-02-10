@@ -73,10 +73,16 @@ export async function getCompaniesWithoutEmails(limit = 50) {
 }
 
 /**
- * Update company with extracted emails
+ * Update company with extracted emails and save details to Contact model
  */
-export async function updateCompanyEmails(companyId: string, emails: string[]) {
-    return prisma.company.update({
+export async function updateCompanyEmails(
+    companyId: string, 
+    emails: string[], 
+    details: { email: string; confidence: number; source: string; type?: string }[] = [],
+    jobId?: string
+) {
+    // 1. Update the simple string array on Company
+    await prisma.company.update({
         where: { id: companyId },
         data: {
             emails: emails,
@@ -84,6 +90,27 @@ export async function updateCompanyEmails(companyId: string, emails: string[]) {
             emailScrapedAt: new Date()
         }
     });
+
+    // 2. Create detailed Contact records
+    if (details.length > 0) {
+        // We use createMany or individual creates. Prisma doesn't support createMany with relations 
+        // easily on some DBs, but for Postgres it does. 
+        // However, we want to set companyId.
+        
+        const contactsData = details.map(d => ({
+             companyId: companyId,
+             workEmail: d.email, // Map to correct Prisma field
+             confidenceScore: d.confidence,
+             emailSource: d.source,
+             emailType: d.type || 'generic',
+             jobId: jobId,
+             fullName: 'Unknown' // Default, as we don't extract names yet
+        }));
+
+        await prisma.contact.createMany({
+            data: contactsData
+        });
+    }
 }
 
 /**

@@ -1,15 +1,18 @@
 /**
- * Website Scraper
- * Visits company websites to extract emails
+ * Website Scraper - Agentic Implementation
+ * Uses Stealth Browser and Hybrid Parsing to extracting emails
  */
 
-import { extractEmailsFromHtml, getBestEmail, getAllEmails } from '../utils/emailExtractor.js';
+import { StealthBrowser } from './stealthBrowser.js'; 
+import { HybridParser } from '../utils/hybridParser.js';
+import { Page } from 'puppeteer';
 
 interface ScrapedEmailResult {
     primaryEmail: string | null;
     allEmails: string[];
     pagesScraped: string[];
     error?: string;
+    details?: { email: string; confidence: number; source: string; type?: string }[];
 }
 
 // Pages to check for contact info
@@ -25,11 +28,52 @@ const CONTACT_PAGES = [
 ];
 
 /**
- * Scrape emails from a company website
+ * Scrape emails from a company website using Stealth Agent
+ */
+// Helper to extract relevant internal links
+async function findInternalContactLinks(page: Page, baseUrl: string): Promise<string[]> {
+    const links = await page.evaluate(() => {
+        const anchors = Array.from(document.querySelectorAll('a'));
+        return anchors
+            .map(a => a.href)
+            .filter(href => href && href.length > 0);
+    });
+
+    const uniqueLinks = new Set<string>();
+    const baseDomain = new URL(baseUrl).hostname;
+
+    for (const link of links) {
+        try {
+            const url = new URL(link);
+            // Must be same domain
+            if (url.hostname !== baseDomain && !url.hostname.endsWith('.' + baseDomain)) {
+                continue;
+            }
+            
+            // Keywords to look for
+            const lowerHref = link.toLowerCase();
+            if (
+                lowerHref.includes('contact') || 
+                lowerHref.includes('about') || 
+                lowerHref.includes('team') || 
+                lowerHref.includes('impressum') ||
+                lowerHref.includes('legal')
+            ) {
+                uniqueLinks.add(link);
+            }
+        } catch {
+            // Invalid URL, ignore
+        }
+    }
+    
+    return Array.from(uniqueLinks);
+}
+
+/**
+ * Scrape emails from a company website using Stealth Agent & Deep Crawl
  */
 export async function scrapeEmailsFromWebsite(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    page: any,
+    providedBrowser: StealthBrowser | null, 
     websiteUrl: string,
     maxPages = 3
 ): Promise<ScrapedEmailResult> {
@@ -37,6 +81,7 @@ export async function scrapeEmailsFromWebsite(
         primaryEmail: null,
         allEmails: [],
         pagesScraped: [],
+        details: []
     };
 
     if (!websiteUrl) {
@@ -49,77 +94,116 @@ export async function scrapeEmailsFromWebsite(
     if (!baseUrl.startsWith('http')) {
         baseUrl = 'https://' + baseUrl;
     }
-    
-    // Remove trailing slash
     baseUrl = baseUrl.replace(/\/$/, '');
 
-    const allExtractedEmails: ReturnType<typeof extractEmailsFromHtml> = [];
+    // Initialize tools
+    const browser = providedBrowser || new StealthBrowser(); // Fallback if not provided
+    const parser = new HybridParser();
+    
+    const allFindings: { email: string; confidence: number; source: string; type?: string }[] = [];
+    const visitedUrls = new Set<string>();
+    const urlsToVisit: string[] = [baseUrl]; // Start with homepage
+
+    // Add default contact pages as candidates
+    for (const path of CONTACT_PAGES) {
+        if (path) urlsToVisit.push(baseUrl + path);
+    }
+
     let pagesChecked = 0;
 
-    for (const path of CONTACT_PAGES) {
-        if (pagesChecked >= maxPages) break;
+    let page: Page | null = null;
 
-        const targetUrl = baseUrl + path;
-        
-        try {
-            // Navigate with timeout
-            await page.goto(targetUrl, { 
-                waitUntil: 'domcontentloaded', 
-                timeout: 10000 
-            });
+    try {
+        page = await browser.createPage();
 
-            // Wait a bit for JS to render
-            await new Promise(r => setTimeout(r, 500));
-
-            // Get page content
-            const html = await page.content();
+        while (urlsToVisit.length > 0 && pagesChecked < maxPages) {
+            const targetUrl = urlsToVisit.shift()!;
             
-            // Extract emails
-            const emails = extractEmailsFromHtml(html);
-            allExtractedEmails.push(...emails);
-            
-            result.pagesScraped.push(targetUrl);
-            pagesChecked++;
+            // Avoid duplicates
+            if (visitedUrls.has(targetUrl)) continue;
+            visitedUrls.add(targetUrl);
 
-            // Small delay between pages
-            await new Promise(r => setTimeout(r, 800));
+            try {
+                if (process.env.DEBUG) console.log(`[DeepCrawl] Visiting: ${targetUrl}`);
+                
+                // Navigate with human-like behavior
+                await page.goto(targetUrl, { 
+                    waitUntil: 'domcontentloaded', 
+                    timeout: 15000 
+                });
 
-        } catch {
-            // Page might not exist, continue to next
-            continue;
+                // Simulate human reading
+                await browser.simulateHuman(page);
+
+                // Get page content
+                const html = await page.content();
+                
+                // Extract emails using Hybrid Parser
+                const extracted = await parser.extract(html, false); 
+                
+                if (extracted.length > 0) {
+                    allFindings.push(...extracted);
+                    if (process.env.DEBUG) console.log(`[DeepCrawl] Found ${extracted.length} emails on ${targetUrl}`);
+                }
+
+                // Deep Crawl: If we are on the homepage, look for more links
+                if (targetUrl === baseUrl && pagesChecked === 0) {
+                    const foundLinks = await findInternalContactLinks(page, baseUrl);
+                    if (process.env.DEBUG) console.log(`[DeepCrawl] Found ${foundLinks.length} relevant internal links.`);
+                    
+                    // Add found links to the queue (prioritize them)
+                    for (const link of foundLinks) {
+                        if (!visitedUrls.has(link) && !urlsToVisit.includes(link)) {
+                            urlsToVisit.push(link);
+                        }
+                    }
+                }
+                
+                result.pagesScraped.push(targetUrl);
+                pagesChecked++;
+
+            } catch (err: unknown) {
+               const errorMessage = err instanceof Error ? err.message : String(err);
+               if (process.env.DEBUG) console.warn(`[DeepCrawl] Failed to visit ${targetUrl}: ${errorMessage}`);
+               continue;
+            }
+        }
+
+    } catch (fatalError: unknown) {
+        const msg = fatalError instanceof Error ? fatalError.message : String(fatalError);
+        result.error = `Scraping failed: ${msg}`;
+        result.allEmails = []; // Ensure empty array on failure
+    } finally {
+        // Cleanup - CRITICAL for memory leak prevention
+        if (page) {
+            try {
+                await page.close();
+            } catch (e) { /* ignore close errors */ }
         }
     }
 
-    // Deduplicate and get results
-    const uniqueEmails = [...new Set(getAllEmails(allExtractedEmails))];
-    result.allEmails = uniqueEmails;
-    result.primaryEmail = getBestEmail(allExtractedEmails);
+    // Deduplicate logic
+    const uniqueMap = new Map<string, typeof allFindings[0]>();
+    for (const item of allFindings) {
+        if (!uniqueMap.has(item.email)) {
+            uniqueMap.set(item.email, item);
+        } else {
+            const existing = uniqueMap.get(item.email)!;
+            // Merge generic/personal if one is unknown? For now just take higher confidence.
+            if (item.confidence > existing.confidence) {
+                uniqueMap.set(item.email, item);
+            }
+        }
+    }
+
+    const uniqueResults = Array.from(uniqueMap.values());
+    result.allEmails = uniqueResults.map(r => r.email);
+    result.details = uniqueResults;
+    
+    // Sort by confidence
+    const bestMatch = uniqueResults.sort((a, b) => b.confidence - a.confidence)[0];
+    result.primaryEmail = bestMatch ? bestMatch.email : null;
 
     return result;
 }
 
-/**
- * Create a new browser page configured for email scraping
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createEmailScraperPage(browser: any) {
-    const page = await browser.newPage();
-    
-    // Set a realistic user agent
-    await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
-
-    // Block unnecessary resources for faster loading
-    await page.setRequestInterception(true);
-    page.on('request', (req: { resourceType: () => string; abort: () => void; continue: () => void }) => {
-        const type = req.resourceType();
-        if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
-            req.abort();
-        } else {
-            req.continue();
-        }
-    });
-
-    return page;
-}

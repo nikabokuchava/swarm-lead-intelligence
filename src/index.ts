@@ -1,19 +1,8 @@
 import { program } from 'commander';
 import { config } from './config/index.js';
-import puppeteerExtra from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import * as winston from 'winston';
-import cliProgress from 'cli-progress';
-import { connectDB, disconnectDB, createCompanyIfNotExists, getCompaniesWithoutEmails, updateCompanyEmails } from './db/company.js';
-import { createScrapeJob, completeJob, failJob, listScrapeJobs } from './db/scrapeJob.js';
-import { exportToCSV } from './utils/exportCSV.js';
-import { scrapeEmailsFromWebsite, createEmailScraperPage } from './scraper/websiteScraper.js';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const puppeteer = puppeteerExtra as any;
-
-const stealth = StealthPlugin();
-puppeteer.use(stealth);
+import { connectDB, disconnectDB, createCompanyIfNotExists } from './db/company.js';
+import { GoogleMapsScraper } from './scraper/googleMapsScraper.js';
 
 const logger = winston.createLogger({
     level: 'info',
@@ -30,304 +19,100 @@ const logger = winston.createLogger({
 // Parse CLI arguments
 program
     .name('swarm-lead-scraper')
-    .description('Scrapes business leads from Google Maps')
+    .description('Scrapes business leads from Google Maps and queues them for email extraction')
     .option('-q, --query <string>', 'Search query (e.g., "dentists in tbilisi")')
     .option('-m, --max <number>', 'Maximum results to scrape', '20')
     .option('--headless', 'Run browser in headless mode')
-    .option('-o, --output <path>', 'Custom CSV output path')
-    .option('--list-jobs', 'List recent scrape jobs')
-    .option('--with-emails', 'Extract emails from company websites after scraping')
-    .option('--email-only', 'Extract emails for existing companies without emails')
     .parse();
 
 const options = program.opts();
 
-// Handle --list-jobs command
-async function handleListJobs() {
-    await connectDB();
-    const jobs = await listScrapeJobs(10);
-    
-    console.log('\n📋 Recent Scrape Jobs:\n');
-    
-    if (jobs.length === 0) {
-        console.log('   No jobs found.');
-    } else {
-        console.log('┌──────────────────────────────────────┬────────────────────────────┬────────────┬─────────┐');
-        console.log('│ ID                                   │ Query                      │ Status     │ Results │');
-        console.log('├──────────────────────────────────────┼────────────────────────────┼────────────┼─────────┤');
-        
-        for (const job of jobs) {
-            const statusIcon = job.status === 'completed' ? '✅' : job.status === 'failed' ? '❌' : '🔄';
-            const idShort = job.id.substring(0, 36);
-            const queryShort = job.query.substring(0, 24).padEnd(24);
-            const statusPad = `${statusIcon} ${job.status}`.padEnd(10);
-            const results = String(job.resultsFound).padStart(7);
-            console.log(`│ ${idShort} │ ${queryShort} │ ${statusPad} │${results} │`);
-        }
-        
-        console.log('└──────────────────────────────────────┴────────────────────────────┴────────────┴─────────┘');
-    }
-    
-    await disconnectDB();
-    process.exit(0);
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function collectResultLinks(page: any): Promise<string[]> {
-    logger.info('📜 Starting to collect result links...');
-    const resultSelector = 'a.hfpxzc';
-    
-    try {
-        await page.waitForSelector('div[role="feed"]', { timeout: 15000 });
-        // Initial wait for some results
-        await page.waitForSelector(resultSelector, { timeout: 10000 });
-    } catch {
-        logger.warn('⚠️ Feed or results container not found immediately.');
-        return [];
-    }
-
-    let previousCount = 0;
-    let noChangeCount = 0;
-    const maxAttempts = 30; // Safety cap
-
-    for (let i = 0; i < maxAttempts; i++) {
-        // Scroll down in the feed using arrow function
-        await page.evaluate(() => {
-            const feed = document.querySelector('div[role="feed"]');
-            if (feed) {
-                feed.scrollTop = feed.scrollHeight;
-            }
-        });
-
-        // Wait for potential load
-        await new Promise(r => setTimeout(r, config.SCROLL_DELAY_MS));
-
-        // Check count
-        const currentLinks = await page.evaluate((sel: string) => {
-            return document.querySelectorAll(sel).length;
-        }, resultSelector);
-
-        logger.info(`🔄 Scroll attempt ${i + 1}: Found ${currentLinks} links (prev: ${previousCount})`);
-
-        if (currentLinks === previousCount) {
-            noChangeCount++;
-        } else {
-            noChangeCount = 0;
-        }
-
-        previousCount = currentLinks;
-
-        if (noChangeCount >= 3) {
-            logger.info('🛑 No new results after 3 scrolls. Stopping collection.');
-            break;
-        }
-    }
-
-    // Extract all unique hrefs
-     
-    const hrefs = await page.evaluate((sel: string) => {
-        const elements = Array.from(document.querySelectorAll(sel)) as HTMLAnchorElement[];
-        return elements.map(el => el.href).filter(href => href && href.length > 0);
-    }, resultSelector);
-
-    // Filter duplicates
-    const uniqueHrefs = [...new Set(hrefs as string[])];
-    logger.info(`✅ Collected ${uniqueHrefs.length} unique links.`);
-    return uniqueHrefs;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function openResultAndExtract(page: any, href: string) {
-    logger.info(`👉 Processing: ${href}`);
-    
-    // Navigate directly
-    await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-    // Wait for the name header to confirm detail view
-    try {
-        await page.waitForSelector('h1.DUwDvf', { timeout: 8000 });
-    } catch {
-       // Try fallback h1
-       try {
-         await page.waitForSelector('h1', { timeout: 3000 });
-       } catch {
-         logger.warn('⚠️ Header not found, extraction might be partial.');
-       }
-    }
-    
-    // Extraction logic
-    const data = await page.evaluate(() => {
-        const getText = (sel: string) => {
-            const el = document.querySelector(sel) as HTMLElement | null;
-            return el?.innerText?.trim() ?? '';
-        };
-
-        const name = getText('h1.DUwDvf') || getText('h1') || 'Unknown Name';
-
-        const ariaElements = Array.from(document.querySelectorAll('[aria-label]'));
-
-        const phoneEl = ariaElements.find(el => el.getAttribute('aria-label')?.includes('Phone:'));
-        const phone = phoneEl ? phoneEl.getAttribute('aria-label')!.replace('Phone:', '').trim() : null;
-
-        const addrEl = ariaElements.find(el => el.getAttribute('aria-label')?.includes('Address:'));
-        const address = addrEl ? addrEl.getAttribute('aria-label')!.replace('Address:', '').trim() : 'Tbilisi, Georgia';
-
-        const webEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement | null;
-        const website = webEl?.href ?? null;
-
-        return { name, phone, website, address };
-    });
-
-    return data;
-}
-
 async function main() {
-    // Handle list-jobs command first
-    if (options.listJobs) {
-        await handleListJobs();
-        return;
-    }
-
-    // Validate query is provided for scraping
+    // Validate query is provided
     if (!options.query) {
-        console.error('Error: --query is required for scraping. Use --list-jobs to view job history.');
+        console.error('Error: --query is required.');
         process.exit(1);
     }
 
     const searchQuery = options.query as string;
     const maxResults = parseInt(options.max as string, 10);
     const headlessMode = options.headless || config.HEADLESS;
-    
-    logger.info('🚀 Launching Multi-Result Scraper...');
+
+    logger.info('🚀 Launching Job Producer...');
     logger.info(`📝 Query: "${searchQuery}"`);
     logger.info(`🎯 Max Results: ${maxResults}`);
-    logger.info(`👁️  Headless: ${headlessMode}`);
 
-    let currentJob: { id: string } | null = null;
+    let scraper: GoogleMapsScraper | null = null;
 
     try {
         await connectDB();
-        logger.info('🔌 Connected to DB via Prisma');
+        logger.info('🔌 Connected to DB');
 
-        // Create scrape job record
-        currentJob = await createScrapeJob({
-            query: searchQuery,
-            maxResults: maxResults
-        });
-        console.log(`📋 Job started: ${currentJob.id}`);
-        logger.info(`Job created: ${currentJob.id}`);
-
-        const browser = await puppeteer.launch({
-            headless: headlessMode,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=en-US']
-        });
-        const page = await browser.newPage();
-
-        // Fix for: ReferenceError: __name is not defined
-        await page.evaluateOnNewDocument(() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (globalThis as any).__name = (fn: any) => fn;
-        });
-
-        // 1. Search
-        const url = `https://www.google.com/maps/search/${searchQuery.replace(/ /g, '+')}?hl=en`;
-        logger.info(`🔍 Searching: ${url}`);
+        scraper = new GoogleMapsScraper();
+        await scraper.init(headlessMode);
         
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-
-        // 2. Collect Links
-        const allLinks = await collectResultLinks(page);
+        await scraper.search(searchQuery);
         
-        // 3. Process Links
-        const linksToProcess = allLinks.slice(0, maxResults);
-        logger.info(`📋 Processing first ${linksToProcess.length} of ${allLinks.length} links...`);
+        // Collect links first
+        const links = await scraper.collectResultLinks(maxResults);
+        console.log(`\n📋 Found ${links.length} potential leads. Extracting details...\n`);
 
-        const scrapedCompanies = [];
-        let duplicateCount = 0;
-        let failedCount = 0;
+        let addedCount = 0;
+        let skippedCount = 0;
 
-        // Create progress bar
-        const progressBar = new cliProgress.SingleBar({
-            format: '📊 Progress |{bar}| {percentage}% | {value}/{total} | {status}',
-            barCompleteChar: '█',
-            barIncompleteChar: '░',
-            hideCursor: true
-        }, cliProgress.Presets.shades_classic);
-        
-        progressBar.start(linksToProcess.length, 0, { status: 'Starting...' });
-
-        for (let i = 0; i < linksToProcess.length; i++) {
-            const link = linksToProcess[i];
-            
+        for (const link of links) {
             try {
-                const data = await openResultAndExtract(page, link);
-                progressBar.update(i + 1, { status: `Extracted: ${data.name.substring(0, 30)}...` });
+                const details = await scraper.extractDetails(link);
+                
+                if (details.name !== 'Unknown Name') {
+                    // Upsert Logic: Create or return existing
+                    // Note: 'status' will be defaulted to 'PENDING' by Schema for new records.
+                    // If it exists, we might want to reset it to PENDING if we want to re-scrape, 
+                    // but the user requirement implies just adding new jobs.
+                    // For now, we utilize the existing 'createCompanyIfNotExists' which handles deduplication.
+                    // To strictly follow "Push to DB (Queue)" and "Set status to PENDING",
+                    // we might need to update existing ones if we want to re-process them.
+                    // However, avoiding duplicates is usually desired.
+                    // Let's assume we want to add *new* unique leads to the queue.
 
-                // Save to DB with deduplication
-                if (data.name !== 'Unknown Name') {
                     const result = await createCompanyIfNotExists({
-                        name: data.name,
-                        phone: data.phone,
-                        website: data.website,
-                        address: data.address,
+                        name: details.name,
+                        phone: details.phone,
+                        website: details.website,
+                        address: details.address,
                         source: 'google_maps'
                     });
-                    
+
                     if (result.isDuplicate) {
-                        duplicateCount++;
-                        logger.debug(`⚠️ Duplicate skipped: ${data.name}`);
-                    } else if (result.company) {
-                        scrapedCompanies.push(result.company);
+                        skippedCount++;
+                        logger.debug(`⚠️ Duplicate skipped: ${details.name}`);
+                    } else {
+                        addedCount++;
+                        logger.info(`✅ Queued: ${details.name}`);
+                        
+                        // IMPORTANT: The default status is PENDING and emailScraped is false 
+                        // as per Schema defaults.
                     }
                 }
-
-            } catch (err: unknown) {
-                failedCount++;
-                logger.error(`❌ Failed to process item ${i}:`, err);
+            } catch (err) {
+                logger.error(`❌ Failed to process link ${link}:`, err);
             }
-
-            // Small delay between items
-            await new Promise(r => setTimeout(r, 1000));
-        }
-        
-        progressBar.stop();
-        
-        // Summary
-        console.log('\n🏁 Batch processing complete!');
-        console.log(`   ✅ Saved: ${scrapedCompanies.length}`);
-        console.log(`   ⚠️  Duplicates skipped: ${duplicateCount}`);
-        console.log(`   ❌ Failed: ${failedCount}`);
-        
-        logger.info(`Summary: saved=${scrapedCompanies.length}, duplicates=${duplicateCount}, failed=${failedCount}`);
-        
-        // Export to CSV
-        if (scrapedCompanies.length > 0) {
-            const csvPath = exportToCSV(scrapedCompanies, options.output);
-            console.log(`   💾 CSV: ${csvPath}`);
-            logger.info(`CSV exported to: ${csvPath}`);
-        } else {
-            console.log('   💾 CSV: Skipped (no new companies)');
         }
 
-        // Mark job as completed
-        if (currentJob) {
-            await completeJob(currentJob.id, scrapedCompanies.length);
-            console.log(`   📋 Job completed: ${currentJob.id}`);
-        }
-        
-        await browser.close();
-        await disconnectDB();
+        console.log('\n🏁 Job Production Complete!');
+        console.log(`   🚀 Added to Queue: ${addedCount}`);
+        console.log(`   ⚠️ Skipped (Duplicate): ${skippedCount}`);
+        console.log(`\nRun 'npm run worker' to process the queue.`);
 
     } catch (error) {
         logger.error('❌ Fatal Error:', error);
-        
-        // Mark job as failed
-        if (currentJob) {
-            await failJob(currentJob.id, 0);
-            console.log(`   📋 Job failed: ${currentJob.id}`);
+        process.exit(1);
+    } finally {
+        if (scraper) {
+            await scraper.close();
         }
-        
         await disconnectDB();
+        process.exit(0);
     }
 }
 
