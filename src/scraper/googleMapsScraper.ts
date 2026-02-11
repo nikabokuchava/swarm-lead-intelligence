@@ -34,6 +34,7 @@ export class GoogleMapsScraper {
 
     async init(headless: boolean = true) {
         this.browser = await puppeteer.launch({
+            channel: 'chrome',
             headless: headless,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=en-US']
         });

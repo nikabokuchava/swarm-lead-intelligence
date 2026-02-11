@@ -16,6 +16,7 @@ export class StealthBrowser {
     if (this.browser) return;
 
     this.browser = await puppeteer.launch({
+      channel: 'chrome',
       headless: true, // Use 'new' or true based on version, stealth plugin handles detection
       args: [
         '--no-sandbox',

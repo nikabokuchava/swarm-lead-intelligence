@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { config } from './config/index.js';
 import { getNextPendingLead, completeJob, failJobOrRetry } from './db/queue.js';
 import { updateCompanyEmails, connectDB, disconnectDB } from './db/company.js';
