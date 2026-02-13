@@ -21,3 +21,19 @@ export async function createScrapeJob(formData: FormData) {
 
   revalidatePath('/jobs');
 }
+
+export async function deleteCompany(id: string) {
+  if (!id) throw new Error('ID is required');
+
+  try {
+    await prisma.company.delete({
+      where: { id },
+    });
+
+    revalidatePath('/leads');
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to delete company:', error);
+    return { success: false, error: 'Failed to delete company' };
+  }
+}

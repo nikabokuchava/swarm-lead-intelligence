@@ -9,6 +9,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
+import { DeleteLeadButton } from '@/components/DeleteLeadButton';
+import Link from 'next/link';
 
 // Force dynamic rendering to always fetch fresh data
 export const dynamic = 'force-dynamic';
@@ -29,7 +33,15 @@ export default async function LeadsPage() {
 
   return (
     <div className="p-8 space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">Leads Overview</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold tracking-tight">Leads Overview</h1>
+        <Button asChild variant="outline">
+          <Link href="/api/leads/export">
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Link>
+        </Button>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -67,6 +79,7 @@ export default async function LeadsPage() {
               <TableHead>Status</TableHead>
               <TableHead>Contacts</TableHead>
               <TableHead className="text-right">Emails</TableHead>
+              <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -90,6 +103,9 @@ export default async function LeadsPage() {
                 <TableCell>{lead._count.contacts}</TableCell>
                 <TableCell className="text-right">
                   {lead.emails.length > 0 ? lead.emails.join(', ') : '-'}
+                </TableCell>
+                <TableCell>
+                  <DeleteLeadButton id={lead.id} />
                 </TableCell>
               </TableRow>
             ))}
