@@ -107,42 +107,42 @@ export default async function LeadsPage(props: LeadsPageProps) {
 
         {/* Table */}
         <Table>
-          <TableHeader className="bg-zinc-950/30">
-            <TableRow className="border-zinc-800/50 hover:bg-transparent">
-              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-medium tracking-wider h-10">Company</TableHead>
-              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-medium tracking-wider h-10">Website</TableHead>
-              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-medium tracking-wider h-10">Status</TableHead>
-              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-medium tracking-wider h-10">Contacts</TableHead>
-              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-medium tracking-wider h-10 text-right">Emails</TableHead>
+          <TableHeader className="bg-zinc-950/50 border-b border-zinc-800">
+            <TableRow className="border-zinc-800 hover:bg-transparent">
+              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10 w-[250px]">Company</TableHead>
+              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10">Website</TableHead>
+              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10">Status</TableHead>
+              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10">Contacts</TableHead>
+              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10 text-right">Emails</TableHead>
               <TableHead className="w-[50px] h-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {leads.map((lead) => (
-              <TableRow key={lead.id} className="border-zinc-800/50 hover:bg-zinc-800/30 transition-colors group">
-                <TableCell className="font-medium text-zinc-200 py-3">{lead.name}</TableCell>
+              <TableRow key={lead.id} className="border-zinc-800/50 hover:bg-zinc-900/80 transition-all duration-200 group data-[state=selected]:bg-zinc-900">
+                <TableCell className="font-bold text-zinc-100 py-3 font-sans">{lead.name}</TableCell>
                 <TableCell className="py-3">
-                  <a href={lead.website || '#'} target="_blank" className="text-zinc-500 hover:text-amber-500 transition-colors hover:underline text-sm">
-                    {lead.website || <span className="opacity-30">-</span>}
+                  <a href={lead.website || '#'} target="_blank" className="font-mono text-xs text-zinc-500 hover:text-amber-500 transition-colors hover:underline decoration-amber-500/30 underline-offset-4">
+                    {lead.website ? lead.website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0] : <span className="opacity-20">-</span>}
                   </a>
                 </TableCell>
                 <TableCell className="py-3">
-                    <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-transparent ${
-                        lead.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-500' :
-                        lead.status === 'FAILED' ? 'bg-red-500/10 text-red-500' :
-                        'bg-amber-500/10 text-amber-500 animate-pulse'
+                    <div className={`inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-mono border ${
+                        lead.status === 'COMPLETED' ? 'bg-emerald-950/30 text-emerald-400 border-emerald-900' :
+                        lead.status === 'FAILED' ? 'bg-red-950/30 text-red-400 border-red-900' :
+                        'bg-amber-950/30 text-amber-500 border-amber-900 animate-pulse'
                     }`}>
-                        {lead.status}
+                        {lead.status === 'PENDING' ? 'WAITING' : lead.status}
                     </div>
                 </TableCell>
-                <TableCell className="text-zinc-400 py-3">{lead._count.contacts}</TableCell>
+                <TableCell className="text-zinc-400 py-3 font-mono text-xs">{lead._count.contacts}</TableCell>
                 <TableCell className="text-right py-3">
                   {lead.emails.length > 0 ? (
-                      <span className="text-zinc-300 font-mono text-xs bg-zinc-800/50 px-1.5 py-0.5 rounded">
+                      <span className="text-amber-500/90 font-mono text-xs bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-sm">
                         {lead.emails[0]} {lead.emails.length > 1 && `+${lead.emails.length - 1}`}
                       </span>
                   ) : (
-                    <span className="text-zinc-700">-</span>
+                    <span className="text-zinc-800 font-mono">-</span>
                   )}
                 </TableCell>
                 <TableCell className="py-3">
@@ -154,8 +154,8 @@ export default async function LeadsPage(props: LeadsPageProps) {
             ))}
             {leads.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6} className="h-32 text-center text-zinc-500">
-                        No leads found. Start a job to see data here.
+                    <TableCell colSpan={6} className="h-32 text-center text-zinc-600 font-mono text-sm">
+                        [No data available]
                     </TableCell>
                 </TableRow>
             )}

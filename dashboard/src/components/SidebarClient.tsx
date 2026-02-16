@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, Users, Briefcase, LogOut, History, Search } from "lucide-react";
+import { LayoutDashboard, Users, Briefcase, LogOut, History, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -30,9 +30,11 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
   const currentJobId = searchParams.get('jobId');
 
   return (
-    <div className="flex h-screen w-64 flex-col border-r bg-card text-card-foreground">
-      <div className="flex h-14 items-center border-b px-6">
-        <span className="text-lg font-bold">Lead Scraper</span>
+    <div className="flex h-screen w-64 flex-col border-r border-zinc-800 bg-zinc-950 text-zinc-400">
+      <div className="flex h-14 items-center border-b border-zinc-800 px-6">
+        <Link href="/dashboard" className="text-lg font-bold tracking-tight text-white hover:text-amber-500 transition-colors">
+          Swarm<span className="text-amber-500">.io</span>
+        </Link>
       </div>
       
       {/* Main Navigation */}
@@ -45,13 +47,13 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
               key={item.name}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200",
                 isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-amber-500/10 text-amber-500 border-l-2 border-amber-500"
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/50 border-l-2 border-transparent"
               )}
             >
-              <item.icon className="h-4 w-4" />
+              <item.icon className={cn("h-4 w-4", isActive ? "text-amber-500" : "text-zinc-500")} />
               {item.name}
             </Link>
           );
@@ -59,10 +61,10 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
       </nav>
 
       {/* Scrape History */}
-      <div className="flex-1 overflow-y-auto px-4 py-2">
-        <div className="mb-2 flex items-center px-2 text-xs font-semibold text-muted-foreground">
+      <div className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar">
+        <div className="mb-2 flex items-center px-2 text-xs font-mono font-semibold text-zinc-500 uppercase tracking-wider">
           <History className="mr-2 h-3 w-3" />
-          Recent Scrapes
+          Recent Jobs
         </div>
         <div className="space-y-1">
           {recentJobs.map((job) => {
@@ -70,21 +72,25 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
             return (
               <Link
                 key={job.id}
-                href={`/leads?jobId=${job.id}`}
+                href={`/dashboard/leads?jobId=${job.id}`}
                 className={cn(
-                  "flex flex-col gap-1 rounded-md px-3 py-2 text-sm transition-colors",
+                  "flex flex-col gap-1 rounded-md px-3 py-2 text-xs font-mono transition-all duration-200 border-l-2",
                   isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-zinc-900/80 text-amber-500 border-amber-500/50"
+                    : "text-zinc-500 hover:bg-zinc-900/30 hover:text-zinc-300 border-transparent"
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <span className="truncate font-medium">{job.query}</span>
-                  <span className="text-[10px] opacity-70">
+                  <span className="truncate font-medium">
+                    {/* Prefix with > for terminal feel */}
+                    <span className="opacity-50 mr-1">&gt;</span>
+                    {job.query}
+                  </span>
+                  <span className={cn("text-[10px]", job.resultsFound > 0 ? "text-emerald-500" : "text-zinc-700")}>
                     {job.resultsFound}
                   </span>
                 </div>
-                <span className="text-[10px] opacity-50">
+                <span className="text-[10px] opacity-40 pl-2">
                   {new Date(job.createdAt).toLocaleDateString()}
                 </span>
               </Link>
@@ -92,24 +98,30 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
           })}
           
           {recentJobs.length === 0 && (
-            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-              No recent jobs found
+            <div className="px-3 py-4 text-center text-xs text-zinc-600 font-mono">
+              [No jobs found]
             </div>
           )}
         </div>
       </div>
 
       {/* Footer */}
-      <div className="border-t p-4 mt-auto">
+      <div className="border-t border-zinc-800 p-4 mt-auto bg-zinc-950 space-y-2">
         <div className="flex items-center justify-between">
             <div className="flex flex-col">
-                <span className="text-sm font-medium">Admin</span>
-                <span className="text-xs text-muted-foreground">admin@example.com</span>
+                <span className="text-xs font-medium text-zinc-300">Admin User</span>
+                <span className="text-[10px] text-zinc-600 font-mono">admin@swarm.io</span>
             </div>
-            <Button variant="ghost" size="icon" title="Logout">
-                <LogOut className="h-4 w-4" />
+            <Button variant="ghost" size="icon" title="Logout" className="hover:bg-zinc-900 text-zinc-500 hover:text-zinc-300 h-8 w-8">
+                <LogOut className="h-3 w-3" />
             </Button>
         </div>
+        <Button asChild variant="outline" className="w-full justify-start text-xs font-mono border-zinc-800 hover:bg-zinc-900 text-zinc-400 hover:text-amber-500 h-8">
+          <Link href="/">
+             <Home className="mr-2 h-3 w-3" />
+             Exit to Home
+          </Link>
+        </Button>
       </div>
     </div>
   );

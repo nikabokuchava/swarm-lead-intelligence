@@ -5,7 +5,9 @@
 
 import { StealthBrowser } from './stealthBrowser.js'; 
 import { HybridParser } from '../utils/hybridParser.js';
-import { Page } from 'puppeteer';
+// import * as Puppeteer from 'puppeteer';
+// type Page = Puppeteer.Page;
+type Page = any;
 
 interface ScrapedEmailResult {
     primaryEmail: string | null;

@@ -1,8 +1,9 @@
 import { program } from 'commander';
 import { config } from './config/index.js';
 import * as winston from 'winston';
-import { connectDB, disconnectDB, createCompanyIfNotExists, prisma } from './db/company.js';
-import { GoogleMapsScraper } from './scraper/googleMapsScraper.js';
+import { connectDB, disconnectDB, prisma } from './db/company.js';
+import { startPolling } from './services/jobPoller.js';
+import { processJob } from './services/scraperService.js';
 
 const logger = winston.createLogger({
     level: 'info',
@@ -23,114 +24,55 @@ program
     .option('-q, --query <string>', 'Search query (e.g., "dentists in tbilisi")')
     .option('-m, --max <number>', 'Maximum results to scrape', '20')
     .option('--headless', 'Run browser in headless mode')
+    .option('--serve', 'Run as a background service (Job Poller)')
     .parse();
 
 const options = program.opts();
 
 async function main() {
-    // Validate query is provided
-    if (!options.query) {
-        console.error('Error: --query is required.');
-        process.exit(1);
-    }
-
-    const searchQuery = options.query as string;
-    const maxResults = parseInt(options.max as string, 10);
-    const headlessMode = options.headless || config.HEADLESS;
-
-    logger.info('🚀 Launching Job Producer...');
-    logger.info(`📝 Query: "${searchQuery}"`);
-    logger.info(`🎯 Max Results: ${maxResults}`);
-
-    let scraper: GoogleMapsScraper | null = null;
-
     try {
         await connectDB();
         logger.info('🔌 Connected to DB');
 
-        // Create Scrape Job
+        // MODE 1: Background Service (Poller)
+        if (options.serve) {
+            logger.info('🚀 Starting in Service Mode (--serve)...');
+            await startPolling();
+            // Keep process alive
+            return; 
+        }
+
+        // MODE 2: CLI Command (Immediate Execution)
+        if (!options.query) {
+            console.error('Error: --query is required (or use --serve).');
+            process.exit(1);
+        }
+
+        const searchQuery = options.query as string;
+        const maxResults = parseInt(options.max as string, 10);
+        const headlessMode = options.headless || config.HEADLESS;
+
+        logger.info(`🚀 Launching CLI Job: "${searchQuery}"`);
+
+        // Create Job immediately
         const job = await prisma.scrapeJob.create({
             data: {
                 query: searchQuery,
-                status: 'running',
+                status: 'PENDING',
                 maxResults: maxResults
             }
         });
-        logger.info(`🆔 Job ID: ${job.id}`);
 
-        scraper = new GoogleMapsScraper();
-        await scraper.init(headlessMode);
-        
-        await scraper.search(searchQuery);
-        
-        // Collect links first
-        const links = await scraper.collectResultLinks(maxResults);
-        
-        // Update job with results found
-        await prisma.scrapeJob.update({
-            where: { id: job.id },
-            data: { resultsFound: links.length }
-        });
-
-        console.log(`\n📋 Found ${links.length} potential leads. Extracting details...\n`);
-
-        let addedCount = 0;
-        let skippedCount = 0;
-
-        for (const link of links) {
-            try {
-                const details = await scraper.extractDetails(link);
-                
-                if (details.name !== 'Unknown Name') {
-                    // Upsert Logic: Create or return existing
-                    // Note: 'status' will be defaulted to 'PENDING' by Schema for new records.
-                    // If it exists, we might want to reset it to PENDING if we want to re-scrape, 
-                    // but the user requirement implies just adding new jobs.
-                    // For now, we utilize the existing 'createCompanyIfNotExists' which handles deduplication.
-                    // To strictly follow "Push to DB (Queue)" and "Set status to PENDING",
-                    // we might need to update existing ones if we want to re-process them.
-                    // However, avoiding duplicates is usually desired.
-                    // Let's assume we want to add *new* unique leads to the queue.
-
-                    const result = await createCompanyIfNotExists({
-                        name: details.name,
-                        phone: details.phone,
-                        website: details.website,
-                        address: details.address,
-                        source: 'google_maps',
-                        jobId: job.id
-                    });
-
-                    if (result.isDuplicate) {
-                        skippedCount++;
-                        logger.debug(`⚠️ Duplicate skipped: ${details.name}`);
-                    } else {
-                        addedCount++;
-                        logger.info(`✅ Queued: ${details.name}`);
-                        
-                        // IMPORTANT: The default status is PENDING and emailScraped is false 
-                        // as per Schema defaults.
-                    }
-                }
-            } catch (err) {
-                logger.error(`❌ Failed to process link ${link}:`, err);
-            }
-        }
-
-        console.log('\n🏁 Job Production Complete!');
-        console.log(`   🚀 Added to Queue: ${addedCount}`);
-        console.log(`   ⚠️ Skipped (Duplicate): ${skippedCount}`);
-        console.log(`\nRun 'npm run worker' to process the queue.`);
+        // Process immediately (blocking)
+        await processJob(job.id, headlessMode);
 
     } catch (error) {
         logger.error('❌ Fatal Error:', error);
         process.exit(1);
     } finally {
-        if (scraper) {
-            await scraper.close();
+        if (!options.serve) {
+            await disconnectDB();
         }
-        await disconnectDB();
-        process.exit(0);
     }
 }
 

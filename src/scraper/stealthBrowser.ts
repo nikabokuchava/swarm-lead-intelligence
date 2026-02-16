@@ -1,14 +1,17 @@
 import puppeteerExtra from 'puppeteer-extra';
 const puppeteer = puppeteerExtra.default || puppeteerExtra; // Handle ESM/CJS interop if needed, or just use puppeteerExtra
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { Browser, Page } from 'puppeteer';
+// import * as Puppeteer from 'puppeteer';
+// type Browser = Puppeteer.Browser;
+// type Page = Puppeteer.Page;
+type Page = any;
 
 // Apply stealth plugin
 puppeteer.use(StealthPlugin());
 
 export class StealthBrowser {
-  private browser: Browser | null = null;
-  private pages: Page[] = [];
+  private browser: any | null = null;
+  private pages: any[] = [];
 
   constructor() {}
 

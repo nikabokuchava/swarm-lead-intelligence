@@ -1,22 +1,36 @@
 import { prisma } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const jobId = searchParams.get('jobId');
+
+    const whereClause = jobId ? { jobId } : {};
+
     const leads = await prisma.company.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { contacts: true },
+        },
+      },
     });
 
     const csvHeaders = ['Name', 'Website', 'Phone', 'Address', 'Emails', 'Status', 'Contacts Count'];
     const csvRows = leads.map(lead => {
+      // Escape CSV fields properly
+      const escape = (str: string | null) => str ? `"${str.replace(/"/g, '""')}"` : '';
+      
       return [
-        lead.name || '',
-        lead.website || '',
-        lead.phone || '',
-        lead.address ? `"${lead.address.replace(/"/g, '""')}"` : '', // Escape quotes
-        lead.emails ? `"${lead.emails.join(', ')}"` : '',
+        escape(lead.name),
+        escape(lead.website),
+        escape(lead.phone),
+        escape(lead.address),
+        lead.emails ? `"${lead.emails.join('; ')}"` : '',
         lead.status,
-        0 // Placeholder for contacts count if needed, or we can fetch include count. User asked for specific headers.
+        lead._count.contacts
       ].join(',');
     });
 
@@ -26,7 +40,7 @@ export async function GET() {
       status: 200,
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': 'attachment; filename="leads-export.csv"',
+        'Content-Disposition': `attachment; filename="leads-export${jobId ? `-${jobId}` : ''}.csv"`,
       },
     });
   } catch (error) {

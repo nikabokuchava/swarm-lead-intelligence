@@ -14,7 +14,7 @@ export default async function DashboardPage() {
     prisma.scrapeJob.count({
         where: {
             status: {
-                in: ['PENDING', 'PROCESSING', 'running'] // comprehensive check
+                in: ['PENDING', 'PROCESSING', 'running', 'RUNNING'] // Case insensitive support
             }
         }
     }),
@@ -30,10 +30,10 @@ export default async function DashboardPage() {
   const totalEmails = allLeads.reduce((acc, lead) => acc + (lead.emails?.length || 0), 0);
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="p-8 space-y-8 font-sans">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard Overview</h1>
-        <Button asChild>
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Dashboard Overview</h1>
+        <Button asChild className="bg-amber-500 hover:bg-amber-600 text-black font-semibold">
             <Link href="/dashboard/jobs">
                 Start New Scrape <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
@@ -41,73 +41,73 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-zinc-400 font-mono uppercase">Total Leads</CardTitle>
+            <Users className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalLeads}</div>
-            <p className="text-xs text-muted-foreground">Captured companies</p>
+            <div className="text-2xl font-bold text-zinc-100">{totalLeads}</div>
+            <p className="text-xs text-zinc-500">Captured companies</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Jobs</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-zinc-400 font-mono uppercase">Active Jobs</CardTitle>
+            <Briefcase className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activeJobs}</div>
-            <p className="text-xs text-muted-foreground">Running or pending</p>
+            <div className="text-2xl font-bold text-zinc-100">{activeJobs}</div>
+            <p className="text-xs text-zinc-500">Running or pending</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Emails Found</CardTitle>
-            <Mail className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-zinc-400 font-mono uppercase">Emails Found</CardTitle>
+            <Mail className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalEmails}</div>
-            <p className="text-xs text-muted-foreground">Total verified emails</p>
+            <div className="text-2xl font-bold text-zinc-100">{totalEmails}</div>
+            <p className="text-xs text-zinc-500">Total verified emails</p>
           </CardContent>
         </Card>
       </div>
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold tracking-tight">Recent Activity</h2>
-        <div className="rounded-md border bg-card">
+        <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Recent Activity</h2>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 backdrop-blur overflow-hidden">
             <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>Company</TableHead>
-                        <TableHead>Website</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Emails</TableHead>
+                <TableHeader className="bg-zinc-950/30">
+                    <TableRow className="border-zinc-800/50 hover:bg-transparent">
+                        <TableHead className="font-mono uppercase text-[10px] text-zinc-500">Company</TableHead>
+                        <TableHead className="font-mono uppercase text-[10px] text-zinc-500">Website</TableHead>
+                        <TableHead className="font-mono uppercase text-[10px] text-zinc-500">Status</TableHead>
+                        <TableHead className="font-mono uppercase text-[10px] text-zinc-500 text-right">Emails</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {recentLeads.map((lead) => (
-                        <TableRow key={lead.id}>
-                            <TableCell className="font-medium">{lead.name}</TableCell>
+                        <TableRow key={lead.id} className="border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+                            <TableCell className="font-medium text-zinc-200">{lead.name}</TableCell>
                             <TableCell>
-                                <a href={lead.website || '#'} target="_blank" className="text-blue-500 hover:underline">
+                                <a href={lead.website || '#'} target="_blank" className="text-zinc-500 hover:text-amber-500 transition-colors hover:underline text-sm">
                                     {lead.website || '-'}
                                 </a>
                             </TableCell>
                             <TableCell>
-                                <Badge variant={
-                                    lead.status === 'COMPLETED' ? 'default' :
-                                    lead.status === 'FAILED' ? 'destructive' : 'secondary'
-                                }>
+                                <Badge variant="outline" className={`border-0 ${
+                                    lead.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-500' :
+                                    lead.status === 'FAILED' ? 'bg-red-500/10 text-red-500' : 'bg-amber-500/10 text-amber-500'
+                                }`}>
                                     {lead.status}
                                 </Badge>
                             </TableCell>
-                            <TableCell className="text-right">{lead.emails?.length || 0}</TableCell>
+                            <TableCell className="text-right text-zinc-400">{lead.emails?.length || 0}</TableCell>
                         </TableRow>
                     ))}
                     {recentLeads.length === 0 && (
-                        <TableRow>
-                            <TableCell colSpan={4} className="text-center text-muted-foreground h-24">
+                        <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={4} className="text-center text-zinc-500 h-24">
                                 No recent activity found.
                             </TableCell>
                         </TableRow>
