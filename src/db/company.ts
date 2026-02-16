@@ -8,6 +8,7 @@ interface CompanyData {
     website: string | null;
     address: string | null;
     source: string;
+    jobId?: string;
 }
 
 /**
@@ -42,7 +43,8 @@ export async function createCompanyIfNotExists(data: CompanyData) {
             phone: data.phone,
             website: data.website,
             address: data.address,
-            source: data.source
+            source: data.source,
+            jobId: data.jobId
         }
     });
 

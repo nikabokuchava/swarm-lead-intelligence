@@ -31,6 +31,10 @@ model Company {
   lockedAt       DateTime?        @map("locked_at")
   retries        Int              @default(0)
   
+  // Job Reference
+  jobId          String?          @map("job_id")
+  scrapeJob      ScrapeJob?       @relation(fields: [jobId], references: [id])
+  
   createdAt      DateTime         @default(now()) @map("created_at")
   contacts       Contact[]
   
@@ -67,6 +71,7 @@ model ScrapeJob {
   createdAt    DateTime  @default(now()) @map("created_at")
   completedAt  DateTime? @map("completed_at")
   contacts     Contact[]
+  companies    Company[]
   
   @@map("scrape_jobs")
 }

@@ -1,7 +1,7 @@
 import { program } from 'commander';
 import { config } from './config/index.js';
 import * as winston from 'winston';
-import { connectDB, disconnectDB, createCompanyIfNotExists } from './db/company.js';
+import { connectDB, disconnectDB, createCompanyIfNotExists, prisma } from './db/company.js';
 import { GoogleMapsScraper } from './scraper/googleMapsScraper.js';
 
 const logger = winston.createLogger({
@@ -48,6 +48,16 @@ async function main() {
         await connectDB();
         logger.info('🔌 Connected to DB');
 
+        // Create Scrape Job
+        const job = await prisma.scrapeJob.create({
+            data: {
+                query: searchQuery,
+                status: 'running',
+                maxResults: maxResults
+            }
+        });
+        logger.info(`🆔 Job ID: ${job.id}`);
+
         scraper = new GoogleMapsScraper();
         await scraper.init(headlessMode);
         
@@ -55,6 +65,13 @@ async function main() {
         
         // Collect links first
         const links = await scraper.collectResultLinks(maxResults);
+        
+        // Update job with results found
+        await prisma.scrapeJob.update({
+            where: { id: job.id },
+            data: { resultsFound: links.length }
+        });
+
         console.log(`\n📋 Found ${links.length} potential leads. Extracting details...\n`);
 
         let addedCount = 0;
@@ -80,7 +97,8 @@ async function main() {
                         phone: details.phone,
                         website: details.website,
                         address: details.address,
-                        source: 'google_maps'
+                        source: 'google_maps',
+                        jobId: job.id
                     });
 
                     if (result.isDuplicate) {
