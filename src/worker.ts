@@ -30,6 +30,15 @@ const logger = winston.createLogger({
 const WORKER_ID = `worker-${crypto.randomUUID().substring(0, 8)}`;
 const POLLING_INTERVAL_MS = 5000;
 
+/** Rotate browser every N jobs to prevent Chromium memory leaks */
+const JOBS_PER_BROWSER_SESSION = 50;
+
+async function createBrowser(): Promise<StealthBrowser> {
+    const b = new StealthBrowser();
+    await b.launch();
+    return b;
+}
+
 async function runWorker() {
     logger.info(`🚀 Starting Worker: ${WORKER_ID}`);
 
@@ -37,10 +46,23 @@ async function runWorker() {
         await connectDB();
         logger.info('🔌 Connected to Database');
 
-        // Singleton Browser Instance
-        const browser = new StealthBrowser();
-        await browser.launch();
+        // Mutable browser — supports rotation and crash recovery
+        let browser = await createBrowser();
+        let jobCount = 0;
         logger.info('🌐 Stealth Browser initialized (Headless)');
+
+        /** Gracefully close and re-launch the browser */
+        const rotateBrowser = async (reason: string) => {
+            logger.info(`♻️  Rotating browser session (${reason})...`);
+            try {
+                await browser.close();
+            } catch (closeErr) {
+                logger.warn('⚠️  Error closing browser during rotation (ignoring):', closeErr);
+            }
+            browser = await createBrowser();
+            jobCount = 0;
+            logger.info('🌐 Fresh browser session started.');
+        };
 
         // Graceful shutdown handler
         let isShuttingDown = false;
@@ -83,33 +105,40 @@ async function runWorker() {
                 }
 
                 // 2. Execute Deep Crawl
-                // Pass the browser instance. websiteScraper handles page creation/closure.
                 const result = await scrapeEmailsFromWebsite(browser, job.website);
 
                 if (result.error) {
                     logger.warn(`❌ Scrape error for ${job.website}: ${result.error}`);
-                    // 3b. Handle Failure/Retry
                     await failJobOrRetry(job.id, job.retries, result.error);
                 } else {
-                    // 3a. Handle Success
                     const emailCount = result.allEmails.length;
-                    
+
                     if (emailCount > 0) {
                         logger.info(`✅ Found ${emailCount} emails for ${job.name}: ${result.allEmails.join(', ')}`);
                     } else {
                         logger.info(`🤷 No emails found for ${job.name}`);
                     }
 
-                    // Save data and mark completed
                     await updateCompanyEmails(job.id, result.allEmails, result.details);
                     await completeJob(job.id, true);
                 }
 
-                // Optional: Force garbage collection hints if memory is an issue
-                // if (global.gc) { global.gc(); }
+                // 3. Track job count and rotate browser if threshold reached
+                jobCount++;
+                logger.info(`📊 Job ${jobCount}/${JOBS_PER_BROWSER_SESSION} processed.`);
+
+                if (jobCount >= JOBS_PER_BROWSER_SESSION) {
+                    await rotateBrowser(`${JOBS_PER_BROWSER_SESSION} jobs completed`);
+                }
 
             } catch (loopError) {
-                logger.error('💥 Critical error in worker loop:', loopError);
+                logger.error('💥 Critical error in worker loop — forcing browser restart:', loopError);
+                // Force browser restart to recover from potential Chromium crash
+                try {
+                    await rotateBrowser('crash recovery');
+                } catch (restartErr) {
+                    logger.error('💀 Failed to restart browser after crash:', restartErr);
+                }
                 // Sleep briefly to avoid tight loops on DB failures
                 await new Promise(resolve => setTimeout(resolve, 5000));
             }
@@ -126,3 +155,4 @@ async function runWorker() {
 runWorker();
 
 export { runWorker }; // Export for testing
+
