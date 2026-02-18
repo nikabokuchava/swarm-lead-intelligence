@@ -1,11 +1,15 @@
 import { prisma } from "@/lib/db";
+import { auth } from "@clerk/nextjs/server";
 import { JobCreationForm } from "@/components/jobs/JobCreationForm";
 import { JobsTable } from "@/components/jobs/JobsTable";
 
 export const dynamic = 'force-dynamic';
 
 export default async function JobsPage() {
+  const { userId } = await auth();
+
   const jobs = await prisma.scrapeJob.findMany({
+    where: userId ? { userId } : {},
     orderBy: {
       createdAt: 'desc',
     },

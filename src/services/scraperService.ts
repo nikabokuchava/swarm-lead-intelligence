@@ -2,6 +2,7 @@ import { GoogleMapsScraper } from '../scraper/googleMapsScraper.js';
 import { prisma, createCompanyIfNotExists, updateCompanyEmails } from '../db/company.js';
 import { scrapeEmailsFromWebsite } from '../scraper/websiteScraper.js';
 import { StealthBrowser } from '../scraper/stealthBrowser.js';
+import { verifyEmail } from './emailVerifier.js';
 import { config } from '../config/index.js';
 import winston from 'winston';
 
@@ -25,7 +26,8 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
         const job = await prisma.scrapeJob.findUnique({ where: { id: jobId } });
         if (!job) throw new Error(`Job ${jobId} not found`);
 
-        logger.info(`🚀 Processing Job: ${job.query} (${jobId})`);
+        const ownerId = job.userId || 'admin';
+        logger.info(`🚀 Processing Job: ${job.query} (${jobId}) for User: ${ownerId}`);
         
         await prisma.scrapeJob.update({
             where: { id: jobId },
@@ -63,7 +65,8 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
                         website: details.website,
                         address: details.address,
                         source: 'google_maps',
-                        jobId: job.id
+                        jobId: job.id,
+                        userId: ownerId
                     });
 
                     if (result.isDuplicate) {
@@ -79,15 +82,25 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
                                 const emailResult = await scrapeEmailsFromWebsite(emailBrowser, details.website, 2);
                                 
                                 if (emailResult.allEmails.length > 0) {
+                                    // Verify emails in parallel
+                                    const verifiedDetails = await Promise.all(
+                                        (emailResult.details || []).map(async (d) => {
+                                            const verification = await verifyEmail(d.email);
+                                            return {
+                                                email: d.email,
+                                                confidence: d.confidence,
+                                                source: d.source,
+                                                type: d.type || 'generic',
+                                                verificationStatus: verification.status,
+                                                mxProvider: verification.mxProvider
+                                            };
+                                        })
+                                    );
+
                                     await updateCompanyEmails(
                                         result.company.id, 
                                         emailResult.allEmails, 
-                                        emailResult.details?.map(d => ({
-                                            email: d.email,
-                                            confidence: d.confidence,
-                                            source: d.source,
-                                            type: d.type || 'generic'
-                                        })) || [],
+                                        verifiedDetails,
                                         job.id
                                     );
                                     logger.info(`📧 Found ${emailResult.allEmails.length} emails for ${details.name}`);

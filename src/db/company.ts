@@ -9,6 +9,7 @@ interface CompanyData {
     address: string | null;
     source: string;
     jobId?: string;
+    userId: string; // Required - must be passed from job
 }
 
 /**
@@ -37,6 +38,9 @@ export async function createCompanyIfNotExists(data: CompanyData) {
     }
 
     // Create new company
+    if (!data.userId || data.userId === 'admin') {
+        console.warn(`⚠️ Orphaned Company detected: "${data.name}" has no real userId (got: ${data.userId}). Check job ownership.`);
+    }
     const company = await prisma.company.create({
         data: {
             name: data.name,
@@ -44,7 +48,8 @@ export async function createCompanyIfNotExists(data: CompanyData) {
             website: data.website,
             address: data.address,
             source: data.source,
-            jobId: data.jobId
+            jobId: data.jobId,
+            userId: data.userId || 'admin'
         }
     });
 
@@ -80,7 +85,14 @@ export async function getCompaniesWithoutEmails(limit = 50) {
 export async function updateCompanyEmails(
     companyId: string, 
     emails: string[], 
-    details: { email: string; confidence: number; source: string; type?: string }[] = [],
+    details: { 
+        email: string; 
+        confidence: number; 
+        source: string; 
+        type?: string;
+        verificationStatus?: string;
+        mxProvider?: string;
+    }[] = [],
     jobId?: string
 ) {
     // 1. Update the simple string array on Company
@@ -95,17 +107,16 @@ export async function updateCompanyEmails(
 
     // 2. Create detailed Contact records
     if (details.length > 0) {
-        // We use createMany or individual creates. Prisma doesn't support createMany with relations 
-        // easily on some DBs, but for Postgres it does. 
-        // However, we want to set companyId.
-        
         const contactsData = details.map(d => ({
              companyId: companyId,
              workEmail: d.email, // Map to correct Prisma field
              confidenceScore: d.confidence,
              emailSource: d.source,
              emailType: d.type || 'generic',
+             verificationStatus: d.verificationStatus || 'UNKNOWN',
+             mxProvider: d.mxProvider,
              jobId: jobId,
+             userId: undefined, // Contacts don't strictly need userId if linked to company, but schema might require it? checks schema... No, schema doesn't have userId on contact.
              fullName: 'Unknown' // Default, as we don't extract names yet
         }));
 

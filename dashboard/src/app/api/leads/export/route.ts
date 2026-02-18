@@ -1,12 +1,21 @@
+import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return new NextResponse('Unauthorized', { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
 
-    const whereClause = jobId ? { jobId } : {};
+    const whereClause = {
+      userId,
+      ...(jobId ? { jobId } : {}),
+    };
 
     const leads = await prisma.company.findMany({
       where: whereClause,

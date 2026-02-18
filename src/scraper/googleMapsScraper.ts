@@ -63,8 +63,8 @@ export class GoogleMapsScraper {
         const resultSelector = 'a.hfpxzc';
         
         try {
-            await this.page.waitForSelector('div[role="feed"]', { timeout: 15000 });
-            await this.page.waitForSelector(resultSelector, { timeout: 10000 });
+            await this.page.waitForSelector('div[role="feed"]', { timeout: 60000 });
+            await this.page.waitForSelector(resultSelector, { timeout: 60000 });
         } catch {
             logger.warn('⚠️ Feed or results container not found immediately.');
             return [];
@@ -88,7 +88,7 @@ export class GoogleMapsScraper {
                 return document.querySelectorAll(sel).length;
             }, resultSelector);
 
-            logger.info(`🔄 Scroll attempt ${i + 1}: Found ${currentLinks} links`);
+            logger.info(`🔄 Scrolling... Current links: ${currentLinks} (attempt ${i + 1}/${maxAttempts})`);
 
             if (currentLinks === previousCount) {
                 noChangeCount++;
@@ -121,13 +121,13 @@ export class GoogleMapsScraper {
 
     async extractDetails(href: string): Promise<GoogleMapsResult> {
         logger.info(`👉 Processing: ${href}`);
-        await this.page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await this.page.goto(href, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         try {
-            await this.page.waitForSelector('h1.DUwDvf', { timeout: 8000 });
+            await this.page.waitForSelector('h1.DUwDvf', { timeout: 15000 });
         } catch {
             try {
-                await this.page.waitForSelector('h1', { timeout: 3000 });
+                await this.page.waitForSelector('h1', { timeout: 5000 });
             } catch {
                 logger.warn('⚠️ Header not found, extraction might be partial.');
             }

@@ -1,13 +1,25 @@
 import puppeteerExtra from 'puppeteer-extra';
-const puppeteer = puppeteerExtra.default || puppeteerExtra; // Handle ESM/CJS interop if needed, or just use puppeteerExtra
+const puppeteer = puppeteerExtra.default || puppeteerExtra;
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-// import * as Puppeteer from 'puppeteer';
-// type Browser = Puppeteer.Browser;
-// type Page = Puppeteer.Page;
+
 type Page = any;
 
 // Apply stealth plugin
 puppeteer.use(StealthPlugin());
+
+// Realistic User-Agent rotation pool (Chrome 120+ on Windows/Mac)
+const USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
+];
+
+function getRandomUserAgent(): string {
+    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
 
 export class StealthBrowser {
   private browser: any | null = null;
@@ -20,7 +32,7 @@ export class StealthBrowser {
 
     this.browser = await puppeteer.launch({
       channel: 'chrome',
-      headless: true, // Use 'new' or true based on version, stealth plugin handles detection
+      headless: true,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -38,15 +50,15 @@ export class StealthBrowser {
     
     const page = await this.browser!.newPage();
     
-    // Stealth Evasion: Set a consistent User Agent behavior
-    // We rely on the Stealth Plugin to handle navigator.webdriver and other overrides.
-    // However, we can set a realistic User Agent if needed, but ensure it matches the platform/locale
-    // handled by the plugin. For now, we trust the plugin's defaults or can utilize
-    // page.setUserAgent ONLY if we know it won't break the plugin's heuristics.
-    // The plugin docs suggest leaving it to the plugin or being very careful.
-    
-    // Add random mouse movements and scrolling to simulate human behavior
-    // This will be called by the scraper logic on specific pages.
+    // Rotate User-Agent per page session
+    const ua = getRandomUserAgent();
+    await page.setUserAgent(ua);
+
+    // Set realistic viewport
+    await page.setViewport({
+        width: 1366 + Math.floor(Math.random() * 200),
+        height: 768 + Math.floor(Math.random() * 100),
+    });
     
     this.pages.push(page);
     return page;
@@ -60,7 +72,6 @@ export class StealthBrowser {
     }
   }
 
-  // Helper to mimic human behavior
   async simulateHuman(page: Page) {
       // Random mouse movement
       await page.mouse.move(
@@ -73,7 +84,7 @@ export class StealthBrowser {
           window.scrollBy(0, window.innerHeight / 2);
       });
       
-      // Random delay
+      // Random delay (1-3 seconds)
       const delay = Math.floor(Math.random() * 2000) + 1000;
       await new Promise(r => setTimeout(r, delay));
   }

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, Users, Briefcase, LogOut, History, Home } from "lucide-react";
+import { LayoutDashboard, Users, Briefcase, History, Home } from "lucide-react";
+import { UserButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -82,7 +83,6 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
               >
                 <div className="flex items-center justify-between">
                   <span className="truncate font-medium">
-                    {/* Prefix with > for terminal feel */}
                     <span className="opacity-50 mr-1">&gt;</span>
                     {job.query}
                   </span>
@@ -105,16 +105,19 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="border-t border-zinc-800 p-4 mt-auto bg-zinc-950 space-y-2">
-        <div className="flex items-center justify-between">
-            <div className="flex flex-col">
-                <span className="text-xs font-medium text-zinc-300">Admin User</span>
-                <span className="text-[10px] text-zinc-600 font-mono">admin@swarm.io</span>
-            </div>
-            <Button variant="ghost" size="icon" title="Logout" className="hover:bg-zinc-900 text-zinc-500 hover:text-zinc-300 h-8 w-8">
-                <LogOut className="h-3 w-3" />
-            </Button>
+      {/* Footer - User & Exit */}
+      <div className="border-t border-zinc-800 p-4 mt-auto bg-zinc-950 space-y-3">
+        <div className="flex items-center gap-3">
+            <UserButton
+              afterSignOutUrl="/"
+              appearance={{
+                elements: {
+                  avatarBox: "w-8 h-8 border border-zinc-700",
+                  userButtonPopoverCard: "bg-zinc-900 border-zinc-800",
+                },
+              }}
+            />
+            <span className="text-xs font-mono text-zinc-500">Account</span>
         </div>
         <Button asChild variant="outline" className="w-full justify-start text-xs font-mono border-zinc-800 hover:bg-zinc-900 text-zinc-400 hover:text-amber-500 h-8">
           <Link href="/">

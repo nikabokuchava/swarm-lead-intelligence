@@ -1,28 +1,36 @@
 import { prisma } from "@/lib/db";
+import { auth } from "@clerk/nextjs/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowRight, Briefcase, Mail, Users } from "lucide-react";
+import { ArrowRight, Briefcase, Mail, Users, Loader2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { JobPoller } from "@/components/JobPoller";
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
+  const { userId } = await auth();
+  const userFilter = userId ? { userId } : {};
+
   const [totalLeads, activeJobs, recentLeads, allLeads] = await Promise.all([
-    prisma.company.count(),
+    prisma.company.count({ where: userFilter }),
     prisma.scrapeJob.count({
         where: {
+            ...userFilter,
             status: {
-                in: ['PENDING', 'PROCESSING', 'running', 'RUNNING'] // Case insensitive support
+                in: ['PENDING', 'PROCESSING', 'running', 'RUNNING']
             }
         }
     }),
     prisma.company.findMany({
+      where: userFilter,
       take: 5,
       orderBy: { createdAt: "desc" },
     }),
     prisma.company.findMany({
+        where: userFilter,
         select: { emails: true }
     })
   ]);
@@ -31,6 +39,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-8 space-y-8 font-sans">
+      <JobPoller hasActiveJobs={activeJobs > 0} />
+      
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Dashboard Overview</h1>
         <Button asChild className="bg-amber-500 hover:bg-amber-600 text-black font-semibold">
@@ -95,10 +105,14 @@ export default async function DashboardPage() {
                                 </a>
                             </TableCell>
                             <TableCell>
-                                <Badge variant="outline" className={`border-0 ${
+                                <Badge variant="outline" className={`border-0 flex w-fit items-center gap-1.5 ${
                                     lead.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-500' :
-                                    lead.status === 'FAILED' ? 'bg-red-500/10 text-red-500' : 'bg-amber-500/10 text-amber-500'
+                                    lead.status === 'FAILED' ? 'bg-red-500/10 text-red-500' : 
+                                    'bg-amber-500/10 text-amber-500'
                                 }`}>
+                                    {['PENDING', 'PROCESSING', 'RUNNING'].includes(lead.status) && (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                    )}
                                     {lead.status}
                                 </Badge>
                             </TableCell>

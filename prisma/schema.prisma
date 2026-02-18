@@ -16,6 +16,7 @@ enum ProcessingStatus {
 
 model Company {
   id             String           @id @default(uuid())
+  userId         String           @map("user_id") @default("admin")
   name           String
   website        String?
   phone          String?
@@ -39,7 +40,8 @@ model Company {
   contacts       Contact[]
   
   @@map("companies")
-  @@index([status, createdAt]) // Optimize queue polling
+  @@index([status, createdAt])
+  @@index([userId])
 }
 
 model Contact {
@@ -53,6 +55,11 @@ model Contact {
   emailSource     String?  @map("email_source") // REGEX, LLM, HYBRID
   emailType       String?  @map("email_type")   // personal, generic
   confidenceScore Float?   @map("confidence_score") // 0-100
+  
+  // Verification Fields
+  verificationStatus String @default("UNKNOWN") @map("verification_status") // VALID, INVALID, UNKNOWN
+  mxProvider         String?                    @map("mx_provider")         // Google, Outlook, etc.
+  
   createdAt       DateTime @default(now()) @map("created_at")
   
   scrapeJob ScrapeJob? @relation(fields: [jobId], references: [id])
@@ -64,6 +71,7 @@ model Contact {
 
 model ScrapeJob {
   id           String    @id @default(uuid())
+  userId       String    @map("user_id") @default("admin")
   query        String
   status       String    @default("pending")
   maxResults   Int?      @map("max_results")
@@ -74,4 +82,5 @@ model ScrapeJob {
   companies    Company[]
   
   @@map("scrape_jobs")
+  @@index([userId])
 }
