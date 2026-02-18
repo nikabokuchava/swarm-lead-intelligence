@@ -17,6 +17,7 @@ interface ScrapeJob {
 
 interface SidebarClientProps {
   recentJobs: ScrapeJob[];
+  credits: number | null;
 }
 
 const navigation = [
@@ -25,10 +26,11 @@ const navigation = [
   { name: "Jobs", href: "/dashboard/jobs", icon: Briefcase },
 ];
 
-export function SidebarClient({ recentJobs }: SidebarClientProps) {
+export function SidebarClient({ recentJobs, credits }: SidebarClientProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentJobId = searchParams.get('jobId');
+  const hasNoCredits = credits !== null && credits <= 0;
 
   return (
     <div className="flex h-screen w-64 flex-col border-r border-zinc-800 bg-zinc-950 text-zinc-400">
@@ -105,8 +107,33 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
         </div>
       </div>
 
-      {/* Footer - User & Exit */}
+      {/* Footer - Credits + User & Exit */}
       <div className="border-t border-zinc-800 p-4 mt-auto bg-zinc-950 space-y-3">
+        {/* Credits Badge */}
+        {credits !== null && (
+          <div
+            className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs font-mono border ${
+              credits <= 0
+                ? 'border-red-800 bg-red-950/40 text-red-400'
+                : credits <= 10
+                ? 'border-amber-800 bg-amber-950/40 text-amber-400'
+                : 'border-zinc-700 bg-zinc-900/50 text-zinc-300'
+            }`}
+          >
+            <span className="text-base leading-none">🪙</span>
+            <div className="flex flex-col">
+              <span className="font-semibold">{credits.toLocaleString()} Credits</span>
+              {credits <= 0 && <span className="text-[10px] text-red-500 mt-0.5">No credits left</span>}
+              {credits > 0 && credits <= 10 && <span className="text-[10px] text-amber-500 mt-0.5">Running low</span>}
+            </div>
+          </div>
+        )}
+
+        {hasNoCredits && (
+          <div className="rounded-md px-3 py-2 text-[10px] font-mono text-red-500 bg-red-950/20 border border-red-900/50">
+            ⚠️ Out of credits — new jobs are disabled.
+          </div>
+        )}
         <div className="flex items-center gap-3">
             <UserButton
               afterSignOutUrl="/"

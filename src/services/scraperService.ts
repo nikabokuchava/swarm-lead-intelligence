@@ -1,5 +1,6 @@
 import { GoogleMapsScraper } from '../scraper/googleMapsScraper.js';
 import { prisma, createCompanyIfNotExists, updateCompanyEmails } from '../db/company.js';
+import { hasCredits, deductCredit } from '../db/user.js';
 import { scrapeEmailsFromWebsite } from '../scraper/websiteScraper.js';
 import { StealthBrowser } from '../scraper/stealthBrowser.js';
 import { verifyEmail } from './emailVerifier.js';
@@ -28,6 +29,17 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
 
         const ownerId = job.userId || 'admin';
         logger.info(`🚀 Processing Job: ${job.query} (${jobId}) for User: ${ownerId}`);
+
+        // 💳 CREDIT GATE: Check before starting the job
+        const isRealUser = ownerId !== 'admin';
+        if (isRealUser && !(await hasCredits(ownerId))) {
+            logger.warn(`🚨 Job ${jobId} aborted: User ${ownerId} has insufficient credits.`);
+            await prisma.scrapeJob.update({
+                where: { id: jobId },
+                data: { status: 'FAILED' }
+            });
+            return { success: false, error: 'Insufficient credits' };
+        }
         
         await prisma.scrapeJob.update({
             where: { id: jobId },
@@ -74,6 +86,18 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
                     } else {
                         added++;
                         logger.info(`✅ Added: ${details.name}`);
+
+                        // 💳 Deduct 1 credit per new lead (not duplicates)
+                        if (isRealUser) {
+                            const updatedUser = await deductCredit(ownerId, 1);
+                            logger.info(`💳 Credit deducted. Remaining for user ${ownerId}: ${updatedUser.credits}`);
+
+                            // Stop mid-job if credits exhausted
+                            if (updatedUser.credits <= 0) {
+                                logger.warn(`🚨 User ${ownerId} ran out of credits. Stopping job ${jobId} early.`);
+                                break;
+                            }
+                        }
 
                         // Email Extraction Logic
                         if (details.website && result.company) {
