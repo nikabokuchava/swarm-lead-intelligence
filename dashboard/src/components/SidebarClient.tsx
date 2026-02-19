@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, Users, Briefcase, History, Home } from "lucide-react";
+import { LayoutDashboard, Users, Briefcase, History, Home, Coins } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ const navigation = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { name: "Leads", href: "/dashboard/leads", icon: Users },
   { name: "Jobs", href: "/dashboard/jobs", icon: Briefcase },
+  { name: "Credits", href: "/dashboard/credits", icon: Coins },
 ];
 
 export function SidebarClient({ recentJobs, credits }: SidebarClientProps) {
@@ -110,7 +111,12 @@ export function SidebarClient({ recentJobs, credits }: SidebarClientProps) {
       {/* Footer - Credits + User & Exit */}
       <div className="border-t border-zinc-800 p-4 mt-auto bg-zinc-950 space-y-3">
         {/* Credits Badge */}
-        {credits !== null && (
+        {credits === null ? (
+          <div className="flex items-center gap-2 rounded-md px-3 py-2 text-xs font-mono border border-zinc-800 bg-zinc-900/30 text-zinc-600 animate-pulse">
+            <span className="text-base leading-none">🪙</span>
+            <span>Loading credits...</span>
+          </div>
+        ) : (
           <div
             className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs font-mono border ${
               credits <= 0
