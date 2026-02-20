@@ -37,7 +37,7 @@ export default function RootLayout({
     >
       <html lang="en">
         <body
-          className={`${inter.variable} ${jetbrainsMono.variable} antialiased h-screen overflow-hidden`}
+          className={`${inter.variable} ${jetbrainsMono.variable} antialiased min-h-screen flex flex-col overflow-x-hidden`}
         >
           {children}
         </body>

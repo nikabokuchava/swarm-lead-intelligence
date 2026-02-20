@@ -5,9 +5,10 @@
 
 import { StealthBrowser } from './stealthBrowser.js'; 
 import { HybridParser } from '../utils/hybridParser.js';
-// import * as Puppeteer from 'puppeteer';
-// type Page = Puppeteer.Page;
-type Page = any;
+import Puppeteer from 'puppeteer';
+
+type Browser = Awaited<ReturnType<typeof Puppeteer.launch>>;
+type Page = Awaited<ReturnType<Browser['newPage']>>;
 
 interface ScrapedEmailResult {
     primaryEmail: string | null;

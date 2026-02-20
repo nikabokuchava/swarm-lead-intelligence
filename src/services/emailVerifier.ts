@@ -1,10 +1,6 @@
 import { resolveMx, setServers } from 'node:dns/promises';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
 
-const execAsync = promisify(exec);
-
-// Set public DNS to avoid local resolution issues
+// Use public DNS resolvers for reliability
 setServers(['8.8.8.8', '1.1.1.1']);
 
 export interface EmailVerificationResult {
@@ -13,15 +9,9 @@ export interface EmailVerificationResult {
   error?: string;
 }
 
-export async function verifyEmail(email: string): Promise<EmailVerificationResult> {
-  const domain = email.split('@')[1];
-  
-  if (!domain) {
-    return { status: 'INVALID', error: 'Invalid email format' };
-  }
+const DOMAIN_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
 
-  // Helper to determine provider from MX string
-  const getProvider = (mx: string) => {
+function getProvider(mx: string): string {
     const lower = mx.toLowerCase();
     if (lower.includes('google') || lower.includes('gmail')) return 'Google';
     if (lower.includes('outlook') || lower.includes('protection.outlook')) return 'Outlook';
@@ -29,66 +19,40 @@ export async function verifyEmail(email: string): Promise<EmailVerificationResul
     if (lower.includes('proton')) return 'ProtonMail';
     if (lower.includes('aws') || lower.includes('amazon')) return 'AWS SES';
     return 'Other';
-  };
+}
 
-  try {
-    // 1. Try Native Node DNS
-    const mxRecords = await resolveMx(domain);
+/**
+ * Verify an email address by checking its domain MX records.
+ * Uses ONLY Node's native dns.promises — NO child_process.exec.
+ */
+export async function verifyEmail(email: string): Promise<EmailVerificationResult> {
+    const domain = email.split('@')[1];
 
-    if (!mxRecords || mxRecords.length === 0) {
-      return { status: 'INVALID', error: 'No MX records found' };
+    if (!domain) {
+        return { status: 'INVALID', error: 'Invalid email format' };
     }
 
-    const primaryMx = mxRecords.sort((a, b) => a.priority - b.priority)[0].exchange;
-    return { status: 'VALID', mxProvider: getProvider(primaryMx) };
-    
-  } catch (error: any) {
-    // 2. Fallback to System DNS (nslookup) if Node DNS fails (e.g. ECONNREFUSED)
-    if (error.code === 'ECONNREFUSED' || error.syscall === 'queryMx') {
-        try {
-            // Windows/Linux stats
-            const command = process.platform === 'win32' 
-                ? `nslookup -type=mx ${domain}` 
-                : `dig +short MX ${domain}`;
+    // Validate domain against strict regex to reject malformed input
+    if (!DOMAIN_REGEX.test(domain)) {
+        return { status: 'INVALID', error: 'Invalid domain format' };
+    }
 
-            // Catch stderr as well
-            const { stdout, stderr } = await execAsync(command);
-            const output = (stdout || '') + (stderr || '');
+    try {
+        const mxRecords = await resolveMx(domain);
 
-            if (output.includes('Non-existent domain') || output.includes('NXDOMAIN') || output.includes("can't find")) {
-                 return { status: 'INVALID', error: 'Domain not found (System DNS)' };
-            }
-
-            // Parse for common providers in stdout
-            if (output.includes('mail exchanger')) {
-                // Windows nslookup output check
-                const provider = getProvider(output);
-                return { status: 'VALID', mxProvider: provider };
-            }
- 
-            // Only return VALID if we explicitly see success indicators
-            // Unlike generic string length check which caused false positives
-            if (process.platform !== 'win32' && output.length > 5) {
-                // Dig output usually just lists records
-                 return { status: 'VALID', mxProvider: getProvider(output) };
-            }
-            
-            // If we got here, we executed but found nothing specific
-            return { status: 'INVALID', error: 'No MX records found (System DNS)' };
-
-        } catch (sysError: any) {
-             // Fallback failed too or command error (like non-zero exit code for not found)
-             if (sysError.stdout?.includes('Non-existent domain') || sysError.message?.includes('Non-existent domain')) {
-                 return { status: 'INVALID', error: 'Domain not found' };
-             }
-             return { status: 'UNKNOWN', error: sysError.message };
+        if (!mxRecords || mxRecords.length === 0) {
+            return { status: 'INVALID', error: 'No MX records found' };
         }
-    }
 
-    if (error.code === 'ENOTFOUND' || error.code === 'ENODATA') {
-        return { status: 'INVALID', error: 'Domain not found' };
+        const primaryMx = mxRecords.sort((a, b) => a.priority - b.priority)[0].exchange;
+        return { status: 'VALID', mxProvider: getProvider(primaryMx) };
+    } catch (error: any) {
+        if (error.code === 'ENOTFOUND' || error.code === 'ENODATA') {
+            return { status: 'INVALID', error: 'Domain not found' };
+        }
+        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEOUT' || error.code === 'EAI_AGAIN') {
+            return { status: 'UNKNOWN', error: `DNS resolution failed: ${error.code}` };
+        }
+        return { status: 'UNKNOWN', error: error.message };
     }
-    // Timeout or other network error - don't mark as invalid to be safe
-    return { status: 'UNKNOWN', error: error.message };
-  }
 }

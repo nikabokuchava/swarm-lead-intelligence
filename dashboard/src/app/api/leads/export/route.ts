@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         escape(lead.website),
         escape(lead.phone),
         escape(lead.address),
-        lead.emails ? `"${lead.emails.join('; ')}"` : '',
+        escape(lead.emails ? lead.emails.join('; ') : null),
         lead.status,
         lead._count.contacts
       ].join(',');
@@ -45,11 +45,14 @@ export async function GET(req: NextRequest) {
 
     const csvContent = [csvHeaders.join(','), ...csvRows].join('\n');
 
+    // SEC-05: Sanitize jobId for safe header injection
+    const safeJobId = jobId ? jobId.replace(/[^a-zA-Z0-9-]/g, '') : '';
+
     return new NextResponse(csvContent, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="leads-export${jobId ? `-${jobId}` : ''}.csv"`,
+        'Content-Disposition': `attachment; filename="leads-export${safeJobId ? `-${safeJobId}` : ''}.csv"`,
       },
     });
   } catch (error) {

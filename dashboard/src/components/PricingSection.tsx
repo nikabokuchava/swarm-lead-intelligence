@@ -36,14 +36,14 @@ const plans = [
 export function PricingSection() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
 
-  async function handlePurchase(priceId: string, credits: number) {
+  async function handlePurchase(priceId: string) {
     setLoadingPlan(priceId);
 
     try {
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ priceId, credits }),
+        body: JSON.stringify({ priceId }),
       });
 
       const data = await res.json();
@@ -114,7 +114,7 @@ export function PricingSection() {
             </ul>
 
             <button
-              onClick={() => handlePurchase(plan.priceId, plan.credits)}
+              onClick={() => handlePurchase(plan.priceId)}
               disabled={isLoading || loadingPlan !== null}
               className={`
                 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3

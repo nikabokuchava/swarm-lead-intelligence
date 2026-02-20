@@ -92,7 +92,7 @@ describe('Stability: Job Poller Circuit Breaker', () => {
         
         expect(source).toContain('MAX_CONSECUTIVE_FAILURES');
         expect(source).toContain('FAILURE_COOLDOWN_MS');
-        expect(source).toContain('isProcessing');
+        expect(source).toContain('isShuttingDown');
     });
 });
 

@@ -5,23 +5,15 @@ import { scrapeEmailsFromWebsite } from '../scraper/websiteScraper.js';
 import { StealthBrowser } from '../scraper/stealthBrowser.js';
 import { verifyEmail } from './emailVerifier.js';
 import { config } from '../config/index.js';
-import winston from 'winston';
+import { createAppLogger } from '../utils/logger.js';
 
-const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-    ),
-    transports: [
-        new winston.transports.Console(),
-        new winston.transports.File({ filename: config.LOG_FILE })
-    ]
-});
+// ARC-09: Use shared logger (removed stale duplicated winston config)
+const logger = createAppLogger();
 
 export async function processJob(jobId: string, headlessMode: boolean = true) {
     let scraper: GoogleMapsScraper | null = null;
-    let emailBrowser: StealthBrowser | null = null;
+    // ARC-02: Single shared StealthBrowser for both maps scraping + email crawl
+    let sharedBrowser: StealthBrowser | null = null;
     
     try {
         const job = await prisma.scrapeJob.findUnique({ where: { id: jobId } });
@@ -43,11 +35,17 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
         
         await prisma.scrapeJob.update({
             where: { id: jobId },
-            data: { status: 'RUNNING' }
+            data: { status: 'PROCESSING' }
         });
 
+        // ARC-02: Launch one shared StealthBrowser for the entire job
+        sharedBrowser = new StealthBrowser();
+        await sharedBrowser.launch();
+        logger.info('🌐 Shared StealthBrowser initialized for job.');
+
         scraper = new GoogleMapsScraper();
-        await scraper.init(headlessMode);
+        // Pass sharedBrowser so maps scraper reuses the same Chromium process
+        await scraper.init(headlessMode, sharedBrowser);
         
         await scraper.search(job.query);
         const links = await scraper.collectResultLinks(job.maxResults || 20);
@@ -58,11 +56,6 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
         });
 
         logger.info(`📋 Found ${links.length} leads. Extracting...`);
-
-        // Initialize StealthBrowser for email scraping
-        emailBrowser = new StealthBrowser();
-        // pre-launch to save time, or it will launch on first use
-        await emailBrowser.launch();
 
         let added = 0;
         let skipped = 0;
@@ -99,11 +92,11 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
                             }
                         }
 
-                        // Email Extraction Logic
+                        // Email Extraction — reuses the same sharedBrowser
                         if (details.website && result.company) {
                             try {
                                 logger.info(`🔍 Deep crawling: ${details.website}...`);
-                                const emailResult = await scrapeEmailsFromWebsite(emailBrowser, details.website, 2);
+                                const emailResult = await scrapeEmailsFromWebsite(sharedBrowser, details.website, 2);
                                 
                                 if (emailResult.allEmails.length > 0) {
                                     // Verify emails in parallel
@@ -128,8 +121,6 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
                                         job.id
                                     );
                                     logger.info(`📧 Found ${emailResult.allEmails.length} emails for ${details.name}`);
-                                } else {
-                                    // logger.info(`No emails found for ${details.name}`);
                                 }
                             } catch (emailErr) {
                                 logger.warn(`⚠️ Email extraction failed for ${details.website}:`, emailErr);
@@ -161,7 +152,11 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
         });
         return { success: false, error };
     } finally {
+        // ARC-02: scraper only closes its page, sharedBrowser owns the process
         if (scraper) await scraper.close();
-        if (emailBrowser) await emailBrowser.close();
+        if (sharedBrowser) await sharedBrowser.close();
     }
 }
+
+// Re-export config for backwards compat with any existing callers
+export { config };

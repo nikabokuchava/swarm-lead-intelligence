@@ -1,21 +1,11 @@
 import { program } from 'commander';
 import { config } from './config/index.js';
-import * as winston from 'winston';
+import { createAppLogger } from './utils/logger.js';
 import { connectDB, disconnectDB, prisma } from './db/company.js';
 import { startPolling } from './services/jobPoller.js';
 import { processJob } from './services/scraperService.js';
 
-const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-    ),
-    transports: [
-        new winston.transports.Console(),
-        new winston.transports.File({ filename: config.LOG_FILE })
-    ]
-});
+const logger = createAppLogger();
 
 // Parse CLI arguments
 program

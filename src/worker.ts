@@ -1,31 +1,12 @@
 import 'dotenv/config';
-import { config } from './config/index.js';
 import { getNextPendingLead, completeJob, failJobOrRetry } from './db/queue.js';
 import { updateCompanyEmails, connectDB, disconnectDB } from './db/company.js';
 import { StealthBrowser } from './scraper/stealthBrowser.js';
 import { scrapeEmailsFromWebsite } from './scraper/websiteScraper.js';
 import * as crypto from 'crypto';
-import * as winston from 'winston';
+import { createAppLogger } from './utils/logger.js';
 
-// Configure Worker Logger
-const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-    ),
-    transports: [
-        new winston.transports.Console({
-            format: winston.format.combine(
-                winston.format.colorize(),
-                winston.format.printf(({ timestamp, level, message }) => {
-                    return `[${timestamp}] ${level}: ${message}`;
-                })
-            )
-        }),
-        new winston.transports.File({ filename: 'worker.log' })
-    ]
-});
+const logger = createAppLogger('worker.log');
 
 const WORKER_ID = `worker-${crypto.randomUUID().substring(0, 8)}`;
 const POLLING_INTERVAL_MS = 5000;

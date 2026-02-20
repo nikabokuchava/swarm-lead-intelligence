@@ -73,7 +73,7 @@ model ScrapeJob {
   id           String    @id @default(uuid())
   userId       String    @map("user_id") @default("admin")
   query        String
-  status       String    @default("pending")
+  status       ProcessingStatus @default(PENDING)
   maxResults   Int?      @map("max_results")
   resultsFound Int       @default(0) @map("results_found")
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -93,4 +93,11 @@ model User {
   createdAt DateTime @default(now())
 
   @@map("users")
+}
+
+model ProcessedEvent {
+  id        String   @id // Stripe event ID (evt_...)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("processed_events")
 }

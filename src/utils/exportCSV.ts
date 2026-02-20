@@ -6,6 +6,7 @@ interface Company {
     phone: string | null;
     website: string | null;
     address: string | null;
+    emails: string[];
     source: string | null;
     createdAt: Date;
 }
@@ -25,7 +26,7 @@ export function exportToCSV(companies: Company[], outputPath?: string): string {
     const filename = outputPath || `leads_${timestamp}.csv`;
 
     // CSV Headers
-    const headers = ['Name', 'Phone', 'Website', 'Address', 'Source', 'Created At'];
+    const headers = ['Name', 'Phone', 'Website', 'Address', 'Emails', 'Source', 'Created At'];
     
     // CSV Rows
     const rows = companies.map(company => [
@@ -33,6 +34,7 @@ export function exportToCSV(companies: Company[], outputPath?: string): string {
         escapeCSV(company.phone || ''),
         escapeCSV(company.website || ''),
         escapeCSV(company.address || ''),
+        escapeCSV(company.emails?.join('; ') || ''),
         escapeCSV(company.source || ''),
         company.createdAt.toISOString()
     ]);

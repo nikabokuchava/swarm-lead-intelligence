@@ -16,17 +16,29 @@ export function MockTerminal() {
   const [lines, setLines] = useState<string[]>([]);
   
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
     let currentIndex = 0;
-    const interval = setInterval(() => {
+
+    const typeCommand = () => {
       if (currentIndex < commands.length) {
         setLines((prev) => [...prev, commands[currentIndex]]);
         currentIndex++;
+        // Normal typing speed
+        timeoutId = setTimeout(typeCommand, 800);
       } else {
-        setLines([]); // loop
-        currentIndex = 0;
+        // Pause at end before restarting
+        timeoutId = setTimeout(() => {
+          setLines([]);
+          currentIndex = 0;
+          typeCommand();
+        }, 3000);
       }
-    }, 800);
-    return () => clearInterval(interval);
+    };
+
+    // Start the loop
+    typeCommand();
+
+    return () => clearTimeout(timeoutId);
   }, []);
 
   return (

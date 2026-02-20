@@ -7,3 +7,8 @@ yarn-debug.log*
 yarn-error.log*
 .idea
 .vscode
+
+# Generated output files (ARC-06)
+*.log
+*.csv
+*.png

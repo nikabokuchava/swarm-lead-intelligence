@@ -1,8 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed';
+import { prisma } from './prisma.js';
+import { ProcessingStatus } from '@prisma/client';
 
 interface CreateJobParams {
     query: string;
@@ -11,7 +8,7 @@ interface CreateJobParams {
 
 interface UpdateJobParams {
     resultsFound?: number;
-    status?: JobStatus;
+    status?: ProcessingStatus;
     completedAt?: Date;
 }
 
@@ -23,7 +20,7 @@ export async function createScrapeJob(params: CreateJobParams) {
         data: {
             query: params.query,
             maxResults: params.maxResults,
-            status: 'running',
+            status: ProcessingStatus.PROCESSING,
             resultsFound: 0
         }
     });
@@ -37,7 +34,7 @@ export async function updateScrapeJob(jobId: string, params: UpdateJobParams) {
         where: { id: jobId },
         data: {
             ...params,
-            completedAt: params.status === 'completed' || params.status === 'failed' 
+            completedAt: params.status === ProcessingStatus.COMPLETED || params.status === ProcessingStatus.FAILED
                 ? new Date() 
                 : undefined
         }
@@ -69,7 +66,7 @@ export async function listScrapeJobs(limit = 10) {
 export async function getResumableJobs() {
     return prisma.scrapeJob.findMany({
         where: {
-            status: { in: ['running', 'failed'] }
+            status: { in: [ProcessingStatus.PROCESSING, ProcessingStatus.FAILED] }
         },
         orderBy: { createdAt: 'desc' }
     });
@@ -80,7 +77,7 @@ export async function getResumableJobs() {
  */
 export async function completeJob(jobId: string, resultsFound: number) {
     return updateScrapeJob(jobId, {
-        status: 'completed',
+        status: ProcessingStatus.COMPLETED,
         resultsFound,
         completedAt: new Date()
     });
@@ -91,7 +88,7 @@ export async function completeJob(jobId: string, resultsFound: number) {
  */
 export async function failJob(jobId: string, resultsFound: number) {
     return updateScrapeJob(jobId, {
-        status: 'failed',
+        status: ProcessingStatus.FAILED,
         resultsFound,
         completedAt: new Date()
     });

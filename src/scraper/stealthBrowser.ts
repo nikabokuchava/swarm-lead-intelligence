@@ -1,8 +1,10 @@
 import puppeteerExtra from 'puppeteer-extra';
 const puppeteer = puppeteerExtra.default || puppeteerExtra;
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import Puppeteer from 'puppeteer';
 
-type Page = any;
+type Browser = Awaited<ReturnType<typeof Puppeteer.launch>>;
+type Page = Awaited<ReturnType<Browser['newPage']>>;
 
 // Apply stealth plugin
 puppeteer.use(StealthPlugin());
@@ -22,8 +24,8 @@ function getRandomUserAgent(): string {
 }
 
 export class StealthBrowser {
-  private browser: any | null = null;
-  private pages: any[] = [];
+  private browser: Browser | null = null;
+  private pages: Page[] = [];
 
   constructor() {}
 
@@ -61,7 +63,22 @@ export class StealthBrowser {
     });
     
     this.pages.push(page);
+
+    // ARC-10: Auto-remove page from tracking array when it closes
+    page.once('close', () => {
+      this.pages = this.pages.filter(p => p !== page);
+    });
+
     return page;
+  }
+
+  /** Close a single page and let the event listener clean up tracking */
+  async closePage(page: Page): Promise<void> {
+    try {
+      await page.close();
+    } catch {
+      // Page may already be closed — ignore
+    }
   }
 
   async close() {

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { getOrCreateUser, hasCredits } from '@/lib/user';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 export async function createScrapeJob(formData: FormData) {
   // 
@@ -12,6 +13,12 @@ export async function createScrapeJob(formData: FormData) {
 
   if (!userId || !clerkUser) {
     throw new Error("Unauthorized: You must be logged in to create a job.");
+  }
+
+  // SEC-06: Rate limit job creation per user
+  const rateCheck = checkRateLimit(`scrape:${userId}`, 10);
+  if (!rateCheck.allowed) {
+    throw new Error('Too many requests. Please wait before creating more jobs.');
   }
 
   // Ensure user exists in our DB (creates with 100 credits if new)
