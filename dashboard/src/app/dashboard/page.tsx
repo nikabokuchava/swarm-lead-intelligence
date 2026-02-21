@@ -20,7 +20,7 @@ export default async function DashboardPage() {
         where: {
             ...userFilter,
             status: {
-                in: ['PENDING', 'PROCESSING', 'running', 'RUNNING']
+                in: ['PENDING', 'PROCESSING']
             }
         }
     }),
@@ -110,7 +110,7 @@ export default async function DashboardPage() {
                                     lead.status === 'FAILED' ? 'bg-red-500/10 text-red-500' : 
                                     'bg-amber-500/10 text-amber-500'
                                 }`}>
-                                    {['PENDING', 'PROCESSING', 'RUNNING'].includes(lead.status) && (
+                                    {['PENDING', 'PROCESSING'].includes(lead.status) && (
                                         <Loader2 className="h-3 w-3 animate-spin" />
                                     )}
                                     {lead.status}

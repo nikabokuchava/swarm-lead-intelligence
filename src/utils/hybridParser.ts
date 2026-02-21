@@ -53,7 +53,7 @@ export class HybridParser {
     findings.push(...obfuscatedMatches);
 
     // Filter duplicates and placeholders
-    let uniqueFindings = this.deduplicateAndFilter(findings);
+    const uniqueFindings = this.deduplicateAndFilter(findings);
 
     if (uniqueFindings.length > 0) {
         return uniqueFindings;
@@ -128,7 +128,7 @@ export class HybridParser {
 
   private async extractWithLlm(text: string): Promise<EmailExtractionResult[]> {
      try {
-        const model = this.openai('gpt-4-turbo'); // Or gpt-3.5-turbo based on budget
+        const model = this.openai(process.env.EMAIL_LLM_MODEL || 'gpt-4o-mini');
         
         // Truncate text if too long to save tokens
         const truncatedText = text.slice(0, 15000); 

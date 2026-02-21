@@ -1,0 +1,63 @@
+# ─── Stage 1: Builder ────────────────────────────────────────────────────────
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+# Copy manifests first for layer caching
+COPY package*.json ./
+COPY tsconfig.json ./
+COPY prisma ./prisma/
+
+# Install all deps (including devDeps for tsc) using npm install for stability
+RUN npm install
+
+# Generate Prisma Client (REQUIRED for tsc build)
+RUN npx prisma generate
+
+# Copy source and compile
+COPY src ./src
+RUN npm run build
+
+
+# ─── Stage 2: Runtime ────────────────────────────────────────────────────────
+FROM node:20-slim AS runtime
+
+# Puppeteer / Chrome runtime dependencies
+RUN apt-get update && apt-get install -y \
+    chromium \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnss3 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Tell Puppeteer to use the system Chromium instead of downloading its own
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV NODE_ENV=production
+
+WORKDIR /app
+
+# Copy production manifests and install prod-only deps
+COPY package*.json ./
+RUN npm install --omit=dev
+
+# Copy compiled output and Prisma schema
+COPY --from=builder /app/dist ./dist
+# We don't copy node_modules/.prisma from builder because we regenerate it below matching this env
+COPY prisma ./prisma/
+
+# Generate Prisma client for the runtime environment
+RUN npx prisma generate
+
+# Run migrations then start the worker in --serve mode
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/worker.js"]
