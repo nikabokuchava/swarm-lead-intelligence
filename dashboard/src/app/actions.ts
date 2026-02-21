@@ -3,8 +3,8 @@
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { auth, currentUser } from '@clerk/nextjs/server';
-import { getOrCreateUser, hasCredits } from '@/lib/user';
-import { checkRateLimit } from '@/lib/rateLimit';
+import { getOrCreateUser } from '@/lib/user';
+// DaaS mode: rate limiting and credit checks disabled
 
 export async function createScrapeJob(formData: FormData) {
   // 
@@ -15,20 +15,9 @@ export async function createScrapeJob(formData: FormData) {
     throw new Error("Unauthorized: You must be logged in to create a job.");
   }
 
-  // SEC-06: Rate limit job creation per user
-  const rateCheck = checkRateLimit(`scrape:${userId}`, 10);
-  if (!rateCheck.allowed) {
-    throw new Error('Too many requests. Please wait before creating more jobs.');
-  }
-
-  // Ensure user exists in our DB (creates with 100 credits if new)
+  // DaaS mode: no rate limiting or credit checks
   const email = clerkUser.emailAddresses[0]?.emailAddress ?? '';
   await getOrCreateUser(userId, email);
-
-  // Credit gate: block job creation if out of credits
-  if (!(await hasCredits(userId))) {
-    throw new Error('Insufficient credits. Please upgrade your plan.');
-  }
 
   const query = formData.get('query') as string;
   const maxResults = Number(formData.get('maxResults')) || 20;
@@ -71,5 +60,43 @@ export async function deleteCompany(id: string) {
   } catch (error) {
     console.error('Failed to delete company:', error);
     return { success: false, error: 'Failed to delete company' };
+  }
+}
+
+export async function cancelScrapeJob(jobId: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  if (!jobId) throw new Error('Job ID is required');
+
+  try {
+    // 1. Mark Job as FAILED
+    await prisma.scrapeJob.updateMany({
+      where: {
+        id: jobId,
+        userId: userId, // Ensure user owns the job
+      },
+      data: {
+        status: 'FAILED',
+      },
+    });
+
+    // 2. Mark pending companies as FAILED so worker stops picking them up
+    await prisma.company.updateMany({
+      where: {
+        jobId: jobId,
+        userId: userId,
+        status: 'PENDING',
+      },
+      data: {
+        status: 'FAILED',
+      },
+    });
+
+    revalidatePath('/dashboard');
+    revalidatePath('/dashboard/jobs');
+  } catch (error) {
+    console.error('Failed to cancel job:', error);
+    throw new Error('Failed to cancel job');
   }
 }

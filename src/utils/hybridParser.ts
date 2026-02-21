@@ -13,10 +13,26 @@ const EmailExtractionSchema = z.object({
 
 type EmailExtractionResult = z.infer<typeof EmailExtractionSchema>;
 
+// Deterministic email classification — 0ms, 0 tokens, no hallucination
+const GENERIC_PREFIXES = new Set([
+  'info', 'contact', 'support', 'sales', 'admin', 'hello', 'office',
+  'press', 'media', 'marketing', 'careers', 'help', 'team', 'hr',
+  'billing', 'legal', 'feedback', 'enquiry', 'enquiries', 'service',
+  'noreply', 'no-reply', 'webmaster', 'postmaster', 'abuse',
+]);
+
 export class HybridParser {
   private openai = createOpenAI({
-      apiKey: process.env.OPENAI_API_KEY, // Ensure this is set
+      apiKey: process.env.OPENAI_API_KEY,
   });
+
+  private classifyEmail(email: string): { type: 'generic' | 'personal', confidence: number } {
+    const localPart = email.split('@')[0].toLowerCase();
+    if (GENERIC_PREFIXES.has(localPart)) {
+      return { type: 'generic', confidence: 70 };
+    }
+    return { type: 'personal', confidence: 95 };
+  }
 
   /**
    * Main entry point: Extract emails from raw HTML.
@@ -31,11 +47,12 @@ export class HybridParser {
         mailtoMatches.forEach(match => {
             const email = match.replace(/href=["']mailto:/i, '').replace(/["']$/, '');
             if (this.isValidEmail(email)) {
+                const classification = this.classifyEmail(email);
                 findings.push({
                     email: email.toLowerCase(),
-                    confidence: 100,
+                    confidence: 100, // mailto links are highest confidence source
                     source: 'REGEX',
-                    type: 'unknown'
+                    type: classification.type
                 });
             }
         });
@@ -82,12 +99,15 @@ export class HybridParser {
     
     if (!matches) return [];
 
-    return matches.map(email => ({
-        email: email.toLowerCase(),
-        confidence: 80, 
-        source: 'REGEX',
-        type: 'unknown'
-    }));
+    return matches.map(email => {
+        const classification = this.classifyEmail(email);
+        return {
+            email: email.toLowerCase(),
+            confidence: classification.confidence,
+            source: 'REGEX' as const,
+            type: classification.type
+        };
+    });
   }
 
   private extractObfuscated(text: string): EmailExtractionResult[] {
@@ -97,11 +117,12 @@ export class HybridParser {
     
     return matches.map(m => {
         const email = `${m[1]}@${m[2]}.${m[3]}`.toLowerCase();
+        const classification = this.classifyEmail(email);
         return {
             email: email,
-            confidence: 60, // Lower confidence for obfuscated
-            source: 'REGEX',
-            type: 'unknown'
+            confidence: Math.min(60, classification.confidence), // Cap at 60 for obfuscated
+            source: 'REGEX' as const,
+            type: classification.type
         };
     });
   }
@@ -111,19 +132,22 @@ export class HybridParser {
   }
 
   private deduplicateAndFilter(results: EmailExtractionResult[]): EmailExtractionResult[] {
-      const seen = new Set<string>();
-      return results.filter(r => {
+      const best = new Map<string, EmailExtractionResult>();
+      
+      for (const r of results) {
           const email = r.email.toLowerCase();
-          
-          // Deduplicate
-          if (seen.has(email)) return false;
-          seen.add(email);
 
           // Filter placeholders
-          if (email.includes('example.com') || email.includes('email.com') || email.includes('domain.com')) return false;
-          
-          return true;
-      });
+          if (email.includes('example.com') || email.includes('email.com') || email.includes('domain.com')) continue;
+
+          // Keep the entry with the highest confidence
+          const existing = best.get(email);
+          if (!existing || r.confidence > existing.confidence) {
+              best.set(email, r);
+          }
+      }
+
+      return Array.from(best.values());
   }
 
   private async extractWithLlm(text: string): Promise<EmailExtractionResult[]> {

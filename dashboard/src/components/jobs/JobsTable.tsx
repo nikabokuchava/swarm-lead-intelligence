@@ -1,4 +1,6 @@
 import { Badge } from "@/components/ui/badge";
+import { cancelScrapeJob } from "@/app/actions";
+import { CancelButton } from "@/components/jobs/CancelButton";
 import {
   Table,
   TableBody,
@@ -31,12 +33,13 @@ export function JobsTable({ jobs }: JobsTableProps) {
             <TableHead>Status</TableHead>
             <TableHead>Results</TableHead>
             <TableHead className="text-right">Created</TableHead>
+            <TableHead className="text-right w-[100px]">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {jobs.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={4} className="h-24 text-center">
+              <TableCell colSpan={5} className="h-24 text-center">
                 No jobs found.
               </TableCell>
             </TableRow>
@@ -50,6 +53,13 @@ export function JobsTable({ jobs }: JobsTableProps) {
                 <TableCell>{job.resultsFound}</TableCell>
                 <TableCell className="text-right">
                   {job.createdAt.toLocaleDateString()} {job.createdAt.toLocaleTimeString()}
+                </TableCell>
+                <TableCell className="text-right">
+                  {(job.status === 'PENDING' || job.status === 'PROCESSING') && (
+                    <form action={cancelScrapeJob.bind(null, job.id)}>
+                      <CancelButton />
+                    </form>
+                  )}
                 </TableCell>
               </TableRow>
             ))

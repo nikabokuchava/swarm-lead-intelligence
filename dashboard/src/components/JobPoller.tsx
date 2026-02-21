@@ -11,7 +11,7 @@ export function JobPoller({ hasActiveJobs }: { hasActiveJobs: boolean }) {
 
     const interval = setInterval(() => {
       router.refresh();
-    }, 3000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [hasActiveJobs, router]);
