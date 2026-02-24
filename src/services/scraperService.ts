@@ -11,22 +11,31 @@ import { createAppLogger } from '../utils/logger.js';
 // ARC-09: Use shared logger (removed stale duplicated winston config)
 const logger = createAppLogger();
 
-export async function processJob(jobId: string, headlessMode: boolean = true) {
+export async function processJob(taskId: string, headlessMode: boolean = true) {
     let scraper: GoogleMapsScraper | null = null;
     // ARC-02: Single shared StealthBrowser for both maps scraping + email crawl
     let sharedBrowser: StealthBrowser | null = null;
     
     try {
-        const job = await prisma.scrapeJob.findUnique({ where: { id: jobId } });
-        if (!job) throw new Error(`Job ${jobId} not found`);
+        const task = await prisma.scrapeTask.findUnique({ 
+            where: { id: taskId },
+            include: { scrapeJob: true }
+        });
+        
+        if (!task) throw new Error(`Task ${taskId} not found`);
 
+        const job = task.scrapeJob;
         const ownerId = job.userId || 'admin';
-        logger.info(`🚀 Processing Job: ${job.query} (${jobId}) for User: ${ownerId}`);
+        
+        // Append zipCode to query if it exists
+        const fullQuery = task.zipCode ? `${task.query} in ${task.zipCode}` : task.query;
+        
+        logger.info(`🚀 Processing Task: ${fullQuery} (${taskId}) for Job: ${job.id}`);
 
         // DaaS mode: credit gate disabled — unlimited processing
         
-        await prisma.scrapeJob.update({
-            where: { id: jobId },
+        await prisma.scrapeTask.update({
+            where: { id: taskId },
             data: { status: 'PROCESSING' }
         });
 
@@ -39,13 +48,12 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
         // Pass sharedBrowser so maps scraper reuses the same Chromium process
         await scraper.init(headlessMode, sharedBrowser);
         
-        await scraper.search(job.query);
+        await scraper.search(fullQuery);
+        // We still collect a batch, but we enforce the maxResults in the loop
         const links = await scraper.collectResultLinks(job.maxResults || 20);
         
-        await prisma.scrapeJob.update({
-            where: { id: jobId },
-            data: { resultsFound: links.length }
-        });
+        // Since we are running parallel tasks, we do not overwrite resultsFound with just this task's links.
+        // It's better to increment resultsFound atomically or count by leads at the end.
 
         logger.info(`📋 Found ${links.length} leads. Extracting...`);
 
@@ -53,6 +61,17 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
         let skipped = 0;
 
         for (const link of links) {
+            // Check quota BEFORE processing each lead
+            if (job.maxResults) {
+                const currentCount = await prisma.company.count({
+                    where: { jobId: job.id }
+                });
+                if (currentCount >= job.maxResults) {
+                    logger.info(`🛑 Quota reached (${currentCount}/${job.maxResults}) for Job ${job.id}. Stopping task ${taskId}.`);
+                    break;
+                }
+            }
+
             try {
                 const details = await scraper.extractDetails(link);
                 if (details.name !== 'Unknown Name') {
@@ -125,21 +144,41 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
             }
         }
 
-        await prisma.scrapeJob.update({
-            where: { id: jobId },
+        await prisma.scrapeTask.update({
+            where: { id: taskId },
             data: { 
-                status: 'COMPLETED',
-                completedAt: new Date()
+                status: 'COMPLETED'
             }
         });
 
-        logger.info(`🏁 Job ${jobId} Completed. Added: ${added}, Skipped: ${skipped}`);
+        // Check if all tasks for this job are completed
+        const pendingTasks = await prisma.scrapeTask.count({
+            where: { 
+                jobId: job.id,
+                status: { in: ['PENDING', 'PROCESSING'] }
+            }
+        });
+
+        if (pendingTasks === 0) {
+            const finalCount = await prisma.company.count({ where: { jobId: job.id }});
+            await prisma.scrapeJob.update({
+                where: { id: job.id },
+                data: { 
+                    status: 'COMPLETED',
+                    completedAt: new Date(),
+                    resultsFound: finalCount
+                }
+            });
+            logger.info(`🏁 Job ${job.id} Fully Completed. Total Leads: ${finalCount}`);
+        }
+
+        logger.info(`🏁 Task ${taskId} Completed. Added: ${added}, Skipped: ${skipped}`);
         return { success: true, added, skipped };
 
     } catch (error) {
-        logger.error(`❌ Job ${jobId} Failed:`, error);
-        await prisma.scrapeJob.update({
-            where: { id: jobId },
+        logger.error(`❌ Task ${taskId} Failed:`, error);
+        await prisma.scrapeTask.update({
+            where: { id: taskId },
             data: { status: 'FAILED' }
         });
         return { success: false, error };

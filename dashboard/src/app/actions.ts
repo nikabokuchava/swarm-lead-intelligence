@@ -21,10 +21,16 @@ export async function createScrapeJob(formData: FormData) {
 
   const query = formData.get('query') as string;
   const maxResults = Number(formData.get('maxResults')) || 20;
+  const zipCodesRaw = formData.get('zipCodes') as string | null;
 
   if (!query || query.trim() === '') {
     throw new Error('Query is required');
   }
+
+  // Parse zip codes from comma separated list
+  const zipCodes = zipCodesRaw
+    ? zipCodesRaw.split(',').map(z => z.trim()).filter(Boolean)
+    : [];
 
   // 2. ვქმნით ჯობს კონკრეტული userId-ით
   try {
@@ -33,11 +39,20 @@ export async function createScrapeJob(formData: FormData) {
       data: {
         query,
         maxResults,
-        status: 'PENDING',
+        status: 'PROCESSING', // Parent immediately PROCESSING
         userId: userId, // <--- 
+        tasks: {
+          create: zipCodes.length > 0 
+            ? zipCodes.map(zipCode => ({
+                zipCode,
+                query,
+                status: 'PENDING'
+              }))
+            : [{ query, status: 'PENDING' }] // Null fallback for general queries
+        }
       },
     });
-    console.log(`[ACTION] Successfully created job ${job.id} for user ${userId}`);
+    console.log(`[ACTION] Successfully created job ${job.id} with ${zipCodes.length || 1} tasks for user ${userId}`);
   } catch (err) {
     console.error(`[ACTION] Error creating scrape job:`, err);
     throw err;

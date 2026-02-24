@@ -82,7 +82,8 @@ model ScrapeJob {
   completedAt  DateTime? @map("completed_at")
   contacts     Contact[]
   companies    Company[]
-  
+  tasks        ScrapeTask[]
+
   @@map("scrape_jobs")
   @@index([userId])
 }
@@ -102,4 +103,21 @@ model ProcessedEvent {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("processed_events")
+}
+
+model ScrapeTask {
+  id        String           @id @default(uuid())
+  jobId     String           @map("job_id")
+  zipCode   String?          @map("zip_code")
+  query     String           // Need query for the worker so it doesn't have to join job
+  status    ProcessingStatus @default(PENDING)
+  workerId  String?          @map("worker_id")
+  lockedAt  DateTime?        @map("locked_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  scrapeJob ScrapeJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@map("scrape_tasks")
+  @@index([status, createdAt])
+  @@index([jobId])
 }

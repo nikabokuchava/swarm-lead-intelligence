@@ -35,29 +35,47 @@ export async function startPolling() {
             }
 
             try {
-                const job = await prisma.scrapeJob.findFirst({
+                const task = await prisma.scrapeTask.findFirst({
                     where: { status: 'PENDING' },
                     orderBy: { createdAt: 'asc' },
-                    select: {
-                        id: true,
-                        query: true,
-                        userId: true,
-                        maxResults: true,
-                        status: true,
-                        createdAt: true
+                    include: {
+                        scrapeJob: {
+                            select: {
+                                userId: true,
+                                maxResults: true
+                            }
+                        }
                     }
                 });
 
-                if (job) {
-                    console.log(`✨ Detected PENDING Job: ${job.id} - "${job.query}" (User: ${job.userId})`);
+                if (task) {
+                    console.log(`✨ Detected PENDING Task: ${task.id} - "${task.query}" (Zip: ${task.zipCode || 'NONE'})`);
 
-                    const result = await processJob(job.id, config.HEADLESS);
+                    // Ensure quota is not exhausted right before processing
+                    const leadCount = await prisma.company.count({
+                        where: { jobId: task.jobId }
+                    });
+
+                    if (task.scrapeJob.maxResults && leadCount >= task.scrapeJob.maxResults) {
+                        console.log(`🛑 Quota reached for Job ${task.jobId} (${leadCount}/${task.scrapeJob.maxResults}). Cancelling running task ${task.id}.`);
+                        await prisma.scrapeTask.updateMany({
+                            where: {
+                                jobId: task.jobId,
+                                status: 'PENDING'
+                            },
+                            data: { status: 'CANCELLED' }
+                        });
+                        continue;
+                    }
+
+                    // For now pass the task ID, but scraperService needs update too
+                    const result = await processJob(task.id, config.HEADLESS);
 
                     if (result.success) {
                         consecutiveFailures = 0;
                     } else {
                         consecutiveFailures++;
-                        console.warn(`⚠️ Job ${job.id} failed. Consecutive failures: ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
+                        console.warn(`⚠️ Task ${task.id} failed. Consecutive failures: ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
                     }
                 }
             } catch (error) {

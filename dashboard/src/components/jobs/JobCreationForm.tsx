@@ -46,17 +46,29 @@ export function JobCreationForm() {
           <div className="space-y-2">
              <div className="flex justify-between">
                 <Label htmlFor="maxResults">Max Results</Label>
-                <span className="text-xs text-muted-foreground">Limit: 1-100</span>
+                <span className="text-xs text-muted-foreground">Desired global quota</span>
              </div>
-             {/* Using simple input for now as Slider requires more setup */}
              <Input 
                 id="maxResults" 
                 name="maxResults" 
                 type="number" 
                 min="1" 
-                max="100" 
+                max="5000" 
                 defaultValue="20"
              />
+          </div>
+
+          <div className="space-y-2">
+             <div className="flex justify-between">
+                <Label htmlFor="zipCodes">Target Zip Codes (Optional)</Label>
+                <span className="text-xs text-muted-foreground">Comma-separated</span>
+             </div>
+             <Input
+                id="zipCodes"
+                name="zipCodes"
+                placeholder="e.g. 10001, 10002, 10003"
+             />
+             <p className="text-[10px] text-muted-foreground">Leaves blank for general city-wide searches.</p>
           </div>
 
           <SubmitButton />

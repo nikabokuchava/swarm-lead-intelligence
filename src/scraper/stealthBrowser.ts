@@ -32,18 +32,24 @@ export class StealthBrowser {
   async launch() {
     if (this.browser) return;
 
+    const args = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu',
+    ];
+
+    if (process.env.PROXY_SERVER) {
+      args.push(`--proxy-server=${process.env.PROXY_SERVER}`);
+    }
+
     this.browser = await puppeteer.launch({
       channel: 'chrome',
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-      ],
+      args,
     });
   }
 
@@ -52,6 +58,26 @@ export class StealthBrowser {
     
     const page = await this.browser!.newPage();
     
+    // Handle Proxy Authentication
+    if (process.env.PROXY_USERNAME && process.env.PROXY_PASSWORD) {
+      await page.authenticate({
+        username: process.env.PROXY_USERNAME,
+        password: process.env.PROXY_PASSWORD,
+      });
+    }
+
+    // Enable request interception for bandwidth optimization
+    await page.setRequestInterception(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    page.on('request', (req: any) => {
+      const resourceType = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
     // Rotate User-Agent per page session
     const ua = getRandomUserAgent();
     await page.setUserAgent(ua);
