@@ -8,6 +8,8 @@ interface CompanyData {
     source: string;
     jobId?: string;
     userId: string; // Required - must be passed from job
+    rating?: number | null;
+    reviewCount?: number | null;
 }
 
 /**
@@ -47,7 +49,9 @@ export async function createCompanyIfNotExists(data: CompanyData) {
             address: data.address,
             source: data.source,
             jobId: data.jobId,
-            userId: data.userId || 'admin'
+            userId: data.userId || 'admin',
+            rating: data.rating ?? null,
+            reviewCount: data.reviewCount ?? null
         }
     });
 

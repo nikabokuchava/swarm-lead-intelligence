@@ -25,43 +25,48 @@ export async function startPolling() {
     process.on('SIGTERM', shutdown);
 
     while (!isShuttingDown) {
-        // Cooldown after repeated failures
-        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-            console.warn(`🛑 Circuit breaker active. ${consecutiveFailures} consecutive failures. Cooling down ${FAILURE_COOLDOWN_MS / 1000}s...`);
-            consecutiveFailures = 0;
-            await sleep(FAILURE_COOLDOWN_MS);
-            continue;
-        }
-
         try {
-            const job = await prisma.scrapeJob.findFirst({
-                where: { status: 'PENDING' },
-                orderBy: { createdAt: 'asc' },
-                select: {
-                    id: true,
-                    query: true,
-                    userId: true,
-                    maxResults: true,
-                    status: true,
-                    createdAt: true
-                }
-            });
-
-            if (job) {
-                console.log(`✨ Detected PENDING Job: ${job.id} - "${job.query}" (User: ${job.userId})`);
-
-                const result = await processJob(job.id, config.HEADLESS);
-
-                if (result.success) {
-                    consecutiveFailures = 0;
-                } else {
-                    consecutiveFailures++;
-                    console.warn(`⚠️ Job ${job.id} failed. Consecutive failures: ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
-                }
+            // Cooldown after repeated failures
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                console.warn(`🛑 Circuit breaker active. ${consecutiveFailures} consecutive failures. Cooling down ${FAILURE_COOLDOWN_MS / 1000}s...`);
+                consecutiveFailures = 0;
+                await sleep(FAILURE_COOLDOWN_MS);
+                continue;
             }
-        } catch (error) {
-            consecutiveFailures++;
-            console.error(`⚠️ Poller Error (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}):`, error);
+
+            try {
+                const job = await prisma.scrapeJob.findFirst({
+                    where: { status: 'PENDING' },
+                    orderBy: { createdAt: 'asc' },
+                    select: {
+                        id: true,
+                        query: true,
+                        userId: true,
+                        maxResults: true,
+                        status: true,
+                        createdAt: true
+                    }
+                });
+
+                if (job) {
+                    console.log(`✨ Detected PENDING Job: ${job.id} - "${job.query}" (User: ${job.userId})`);
+
+                    const result = await processJob(job.id, config.HEADLESS);
+
+                    if (result.success) {
+                        consecutiveFailures = 0;
+                    } else {
+                        consecutiveFailures++;
+                        console.warn(`⚠️ Job ${job.id} failed. Consecutive failures: ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
+                    }
+                }
+            } catch (error) {
+                consecutiveFailures++;
+                console.error(`⚠️ Poller Error (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}):`, error);
+            }
+        } catch (catastrophicError) {
+            console.error(`💥 Catastrophic error in jobPoller. Sleeping for 30s.`, catastrophicError);
+            await sleep(30000);
         }
 
         // Wait before next poll (sequential — no overlap possible)

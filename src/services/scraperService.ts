@@ -63,7 +63,9 @@ export async function processJob(jobId: string, headlessMode: boolean = true) {
                         address: details.address,
                         source: 'google_maps',
                         jobId: job.id,
-                        userId: ownerId
+                        userId: ownerId,
+                        rating: details.rating ? Number(details.rating) : null,
+                        reviewCount: details.reviewCount ? parseInt(String(details.reviewCount).replace(/[^0-9]/g, ''), 10) : null
                     });
 
                     if (result.isDuplicate) {

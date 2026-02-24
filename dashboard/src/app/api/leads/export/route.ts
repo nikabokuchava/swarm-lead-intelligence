@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const csvHeaders = ['Name', 'Website', 'Phone', 'Address', 'Emails', 'Status', 'Contacts Count'];
+    const csvHeaders = ['Name', 'Website', 'Phone', 'Address', 'Emails', 'Status', 'Contacts Count', 'Rating', 'Review Count'];
     const csvRows = leads.map(lead => {
       // Escape CSV fields properly
       const escape = (str: string | null) => str ? `"${str.replace(/"/g, '""')}"` : '';
@@ -39,7 +39,9 @@ export async function GET(req: NextRequest) {
         escape(lead.address),
         escape(lead.emails ? lead.emails.join('; ') : null),
         lead.status,
-        lead._count.contacts
+        lead._count.contacts,
+        lead.rating || '',
+        lead.reviewCount || ''
       ].join(',');
     });
 

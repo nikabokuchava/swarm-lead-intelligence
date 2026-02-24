@@ -19,6 +19,8 @@ export interface GoogleMapsResult {
     phone: string | null;
     website: string | null;
     address: string | null;
+    rating?: number | null;
+    reviewCount?: number | null;
 }
 
 /**
@@ -170,7 +172,15 @@ export class GoogleMapsScraper {
             const webEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement | null;
             const website = webEl?.href ?? null;
 
-            return { name, phone, website, address };
+            // Rating & Review extraction per Plan
+            const contextText = document.querySelector('h1')?.parentElement?.parentElement?.innerText || document.body.innerText;
+            const ratingMatch = contextText.match(/\d\.\d/);
+            const rating = ratingMatch ? parseFloat(ratingMatch[0]) : null;
+
+            const reviewMatch = contextText.match(/([\d,]+)\s*reviews/i) || contextText.match(/\(([\d,]+)\)/);
+            const reviewCount = reviewMatch ? parseInt(reviewMatch[1].replace(/,/g, ''), 10) : null;
+
+            return { name, phone, website, address, rating, reviewCount };
         });
     }
 }

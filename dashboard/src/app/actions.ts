@@ -27,14 +27,21 @@ export async function createScrapeJob(formData: FormData) {
   }
 
   // 2. ვქმნით ჯობს კონკრეტული userId-ით
-  await prisma.scrapeJob.create({
-    data: {
-      query,
-      maxResults,
-      status: 'PENDING',
-      userId: userId, // <--- 
-    },
-  });
+  try {
+    console.log(`[ACTION] Attempting to create scrape job for query: "${query}", maxResults: ${maxResults}, userId: ${userId}`);
+    const job = await prisma.scrapeJob.create({
+      data: {
+        query,
+        maxResults,
+        status: 'PENDING',
+        userId: userId, // <--- 
+      },
+    });
+    console.log(`[ACTION] Successfully created job ${job.id} for user ${userId}`);
+  } catch (err) {
+    console.error(`[ACTION] Error creating scrape job:`, err);
+    throw err;
+  }
 
   revalidatePath('/dashboard/jobs');
   revalidatePath('/dashboard');

@@ -22,6 +22,8 @@ model Company {
   phone          String?
   address        String?
   source         String?
+  rating         Float?
+  reviewCount    Int?             @map("review_count")
   emails         String[]         @default([])
   emailScraped   Boolean          @default(false) @map("email_scraped")
   emailScrapedAt DateTime?        @map("email_scraped_at")

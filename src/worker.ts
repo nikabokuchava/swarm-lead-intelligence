@@ -68,60 +68,65 @@ async function runWorker() {
         // Infinite Processing Loop
         while (!isShuttingDown) {
             try {
-                // 1. Fetch Next Job
-                const job = await getNextPendingLead(WORKER_ID);
+                try {
+                    // 1. Fetch Next Job
+                    const job = await getNextPendingLead(WORKER_ID);
 
-                if (!job) {
-                    // Poll wait
-                    await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL_MS));
-                    continue;
-                }
-
-                logger.info(`👷 Processing: ${job.name} (ID: ${job.id}) - URL: ${job.website}`);
-
-                if (!job.website) {
-                    logger.warn(`⚠️  No website for ${job.name}, marking FAILED.`);
-                    await completeJob(job.id, false, 'Missing website URL');
-                    continue;
-                }
-
-                // 2. Execute Deep Crawl
-                const result = await scrapeEmailsFromWebsite(browser, job.website);
-
-                if (result.error) {
-                    logger.warn(`❌ Scrape error for ${job.website}: ${result.error}`);
-                    await failJobOrRetry(job.id, job.retries, result.error);
-                } else {
-                    const emailCount = result.allEmails.length;
-
-                    if (emailCount > 0) {
-                        logger.info(`✅ Found ${emailCount} emails for ${job.name}: ${result.allEmails.join(', ')}`);
-                    } else {
-                        logger.info(`🤷 No emails found for ${job.name}`);
+                    if (!job) {
+                        // Poll wait
+                        await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL_MS));
+                        continue;
                     }
 
-                    await updateCompanyEmails(job.id, result.allEmails, result.details);
-                    await completeJob(job.id, true);
-                }
+                    logger.info(`👷 Processing: ${job.name} (ID: ${job.id}) - URL: ${job.website}`);
 
-                // 3. Track job count and rotate browser if threshold reached
-                jobCount++;
-                logger.info(`📊 Job ${jobCount}/${JOBS_PER_BROWSER_SESSION} processed.`);
+                    if (!job.website) {
+                        logger.warn(`⚠️  No website for ${job.name}, marking FAILED.`);
+                        await completeJob(job.id, false, 'Missing website URL');
+                        continue;
+                    }
 
-                if (jobCount >= JOBS_PER_BROWSER_SESSION) {
-                    await rotateBrowser(`${JOBS_PER_BROWSER_SESSION} jobs completed`);
-                }
+                    // 2. Execute Deep Crawl
+                    const result = await scrapeEmailsFromWebsite(browser, job.website);
 
-            } catch (loopError) {
-                logger.error('💥 Critical error in worker loop — forcing browser restart:', loopError);
-                // Force browser restart to recover from potential Chromium crash
-                try {
-                    await rotateBrowser('crash recovery');
-                } catch (restartErr) {
-                    logger.error('💀 Failed to restart browser after crash:', restartErr);
+                    if (result.error) {
+                        logger.warn(`❌ Scrape error for ${job.website}: ${result.error}`);
+                        await failJobOrRetry(job.id, job.retries, result.error);
+                    } else {
+                        const emailCount = result.allEmails.length;
+
+                        if (emailCount > 0) {
+                            logger.info(`✅ Found ${emailCount} emails for ${job.name}: ${result.allEmails.join(', ')}`);
+                        } else {
+                            logger.info(`🤷 No emails found for ${job.name}`);
+                        }
+
+                        await updateCompanyEmails(job.id, result.allEmails, result.details);
+                        await completeJob(job.id, true);
+                    }
+
+                    // 3. Track job count and rotate browser if threshold reached
+                    jobCount++;
+                    logger.info(`📊 Job ${jobCount}/${JOBS_PER_BROWSER_SESSION} processed.`);
+
+                    if (jobCount >= JOBS_PER_BROWSER_SESSION) {
+                        await rotateBrowser(`${JOBS_PER_BROWSER_SESSION} jobs completed`);
+                    }
+
+                } catch (loopError) {
+                    logger.error('💥 Critical error in worker loop — forcing browser restart:', loopError);
+                    // Force browser restart to recover from potential Chromium crash
+                    try {
+                        await rotateBrowser('crash recovery');
+                    } catch (restartErr) {
+                        logger.error('💀 Failed to restart browser after crash:', restartErr);
+                    }
+                    // Sleep briefly to avoid tight loops on DB failures
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                 }
-                // Sleep briefly to avoid tight loops on DB failures
-                await new Promise(resolve => setTimeout(resolve, 5000));
+            } catch (catastrophicError) {
+                logger.error('💥 Catastrophic error in worker loop. Sleeping for 30s before resuming.', catastrophicError);
+                await new Promise(resolve => setTimeout(resolve, 30000));
             }
         }
 

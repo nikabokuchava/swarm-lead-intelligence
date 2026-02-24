@@ -17,7 +17,6 @@ interface ScrapeJob {
 
 interface SidebarClientProps {
   recentJobs: ScrapeJob[];
-  credits?: number | null;
 }
 
 const navigation = [
@@ -27,7 +26,7 @@ const navigation = [
   // DaaS mode: Credits page removed
 ];
 
-export function SidebarClient({ recentJobs, credits }: SidebarClientProps) {
+export function SidebarClient({ recentJobs }: SidebarClientProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentJobId = searchParams.get('jobId');

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "start": "node dist/index.js",
+    "worker": "tsx src/worker.ts",
     "verify:all": "tsx src/scripts/verify-leads.ts",
     "docker:up": "docker-compose up --build -d",
     "docker:down": "docker-compose down"

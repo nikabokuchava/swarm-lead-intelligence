@@ -10,7 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Download, Terminal, CheckCircle2, XCircle, HelpCircle } from 'lucide-react';
+import { Download, Terminal } from 'lucide-react';
 import { DeleteLeadButton } from '@/components/DeleteLeadButton';
 import Link from 'next/link';
 
@@ -117,6 +117,8 @@ export default async function LeadsPage(props: LeadsPageProps) {
               <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10 w-[200px]">Company</TableHead>
               <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10">Website</TableHead>
               <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10">Phone</TableHead>
+              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10">Rating</TableHead>
+              <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10">Reviews</TableHead>
               <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10">Status</TableHead>
               <TableHead className="font-mono uppercase text-[10px] text-zinc-500 font-bold tracking-widest h-10 text-right">Emails</TableHead>
               <TableHead className="w-[50px] h-10"></TableHead>
@@ -144,6 +146,16 @@ export default async function LeadsPage(props: LeadsPageProps) {
                     ) : (
                         <span className="text-zinc-800 font-mono text-xs">-</span>
                     )}
+                </TableCell>
+
+                {/* Rating */}
+                <TableCell className="py-3 font-mono text-xs text-amber-500">
+                  {lead.rating ? `${lead.rating} ⭐` : <span className="text-zinc-800">-</span>}
+                </TableCell>
+                
+                {/* Reviews */}
+                <TableCell className="py-3 font-mono text-xs text-zinc-500">
+                  {lead.reviewCount ? `${lead.reviewCount.toLocaleString()}` : <span className="text-zinc-800">-</span>}
                 </TableCell>
 
                 {/* Status */}
