@@ -126,6 +126,14 @@ async function runWorker() {
                 }
             } catch (catastrophicError) {
                 logger.error('💥 Catastrophic error in worker loop. Sleeping for 30s before resuming.', catastrophicError);
+                // Attempt DB reconnection — connection may have been severed
+                try {
+                    await disconnectDB();
+                    await connectDB();
+                    logger.info('🔌 Database reconnected successfully after catastrophic error.');
+                } catch (reconnectErr) {
+                    logger.error('💀 Database reconnection failed. Will retry on next loop.', reconnectErr);
+                }
                 await new Promise(resolve => setTimeout(resolve, 30000));
             }
         }

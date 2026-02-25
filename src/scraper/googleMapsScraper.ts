@@ -97,15 +97,41 @@ export class GoogleMapsScraper {
 
         let previousCount = 0;
         let noChangeCount = 0;
-        const maxAttempts = 30;
+        const maxAttempts = 60; // Increased attempts to accommodate explicit mouse scrolls
+
+        // Attempt initial hover over the feed container to focus scroll context
+        try {
+            await this.page!.hover('div[role="feed"]');
+        } catch {
+            logger.warn('⚠️ Could not hover over feed container.');
+        }
 
         for (let i = 0; i < maxAttempts; i++) {
-            await this.page!.evaluate(() => {
-                const feed = document.querySelector('div[role="feed"]');
-                if (feed) feed.scrollTop = feed.scrollHeight;
-            });
+            // Hover over the last known result element to keep the mouse in the feed area
+            try {
+                const elements = await this.page!.$$(resultSelector);
+                if (elements.length > 0) {
+                    await elements[elements.length - 1].hover();
+                }
+            } catch {
+                // Ignore hover errors if the element disappeared
+            }
 
-            await new Promise(r => setTimeout(r, config.SCROLL_DELAY_MS));
+            // Simulate explicit mouse wheel scroll OR PageDown
+            await this.page!.mouse.wheel({ deltaY: 3000 });
+            await this.page!.keyboard.press('PageDown');
+
+            try {
+                // Wait for the DOM to append new elements OR until SCROLL_DELAY_MS passes
+                await this.page!.waitForFunction(
+                    (sel: string, prev: number) => document.querySelectorAll(sel).length > prev,
+                    { timeout: config.SCROLL_DELAY_MS || 3000 },
+                    resultSelector,
+                    previousCount
+                );
+            } catch {
+                // Timeout reached and no new elements appeared
+            }
 
             const currentLinks = await this.page!.evaluate((sel: string) => {
                 return document.querySelectorAll(sel).length;
@@ -124,7 +150,19 @@ export class GoogleMapsScraper {
                 logger.info('🎯 Reached max results limit.');
                 break;
             }
+            
             if (noChangeCount >= 3) {
+                // Check if Google Maps explicitly told us there are no more results
+                const isEndOfList = await this.page!.evaluate(() => {
+                    const markers = Array.from(document.querySelectorAll('span, p, div'));
+                    return markers.some(el => el.textContent?.includes("You've reached the end of the list."));
+                });
+
+                if (isEndOfList) {
+                    logger.info('🛑 Reached the explicit end of the Google Maps list.');
+                    break;
+                }
+
                 logger.info('🛑 No new results after 3 scrolls. Stopping collection.');
                 break;
             }

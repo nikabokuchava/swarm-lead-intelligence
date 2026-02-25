@@ -71,7 +71,7 @@ export class StealthBrowser {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     page.on('request', (req: any) => {
       const resourceType = req.resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+      if (['image', 'font', 'media'].includes(resourceType)) {
         req.abort();
       } else {
         req.continue();

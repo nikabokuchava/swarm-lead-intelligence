@@ -56,14 +56,14 @@ export async function startPolling() {
                         where: { jobId: task.jobId }
                     });
 
-                    if (task.scrapeJob.maxResults && leadCount >= task.scrapeJob.maxResults) {
+                    if (task?.scrapeJob?.maxResults && leadCount >= task.scrapeJob.maxResults) {
                         console.log(`🛑 Quota reached for Job ${task.jobId} (${leadCount}/${task.scrapeJob.maxResults}). Cancelling running task ${task.id}.`);
                         await prisma.scrapeTask.updateMany({
                             where: {
                                 jobId: task.jobId,
                                 status: 'PENDING'
                             },
-                            data: { status: 'CANCELLED' }
+                            data: { status: 'FAILED' }
                         });
                         continue;
                     }
