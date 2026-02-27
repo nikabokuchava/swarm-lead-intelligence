@@ -30,32 +30,39 @@ export async function findExistingCompany(name: string, address: string | null):
  * Returns the company if created, null if duplicate
  */
 export async function createCompanyIfNotExists(data: CompanyData) {
-    // Check for duplicate
-    const isDuplicate = await findExistingCompany(data.name, data.address);
-    
-    if (isDuplicate) {
-        return { company: null, isDuplicate: true };
-    }
-
-    // Create new company
     if (!data.userId || data.userId === 'admin') {
         console.warn(`⚠️ Orphaned Company detected: "${data.name}" has no real userId (got: ${data.userId}). Check job ownership.`);
     }
-    const company = await prisma.company.create({
-        data: {
-            name: data.name,
-            phone: data.phone,
-            website: data.website,
-            address: data.address,
-            source: data.source,
-            jobId: data.jobId,
-            userId: data.userId || 'admin',
-            rating: data.rating ?? null,
-            reviewCount: data.reviewCount ?? null
-        }
-    });
 
-    return { company, isDuplicate: false };
+    // Atomic find-and-create transaction to prevent TOCTOU race condition
+    return await prisma.$transaction(async (tx) => {
+        const existing = await tx.company.findFirst({
+            where: {
+                name: data.name,
+                address: data.address || undefined
+            }
+        });
+
+        if (existing) {
+            return { company: null, isDuplicate: true };
+        }
+
+        const company = await tx.company.create({
+            data: {
+                name: data.name,
+                phone: data.phone,
+                website: data.website,
+                address: data.address,
+                source: data.source,
+                jobId: data.jobId,
+                userId: data.userId || 'admin',
+                rating: data.rating ?? null,
+                reviewCount: data.reviewCount ?? null
+            }
+        });
+
+        return { company, isDuplicate: false };
+    });
 }
 
 /**

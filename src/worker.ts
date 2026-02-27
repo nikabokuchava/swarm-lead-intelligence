@@ -109,6 +109,10 @@ async function runWorker() {
                     jobCount++;
                     logger.info(`📊 Job ${jobCount}/${JOBS_PER_BROWSER_SESSION} processed.`);
 
+                    // Monitor Memory & Potential Page Leaks per concurrency audit
+                    const heapUsedMb = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+                    logger.info(`💾 Heap Used: ${heapUsedMb} MB | Open Pages: ${browser.openPagesCount}`);
+
                     if (jobCount >= JOBS_PER_BROWSER_SESSION) {
                         await rotateBrowser(`${JOBS_PER_BROWSER_SESSION} jobs completed`);
                     }

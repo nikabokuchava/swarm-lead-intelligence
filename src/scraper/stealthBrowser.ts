@@ -29,6 +29,10 @@ export class StealthBrowser {
 
   constructor() {}
 
+  get openPagesCount() {
+    return this.pages.length;
+  }
+
   async launch() {
     if (this.browser) return;
 
@@ -115,7 +119,7 @@ export class StealthBrowser {
     }
   }
 
-  async simulateHuman(page: Page) {
+  async simulateHuman(page: Page, fastMode: boolean = false) {
       // Random mouse movement
       await page.mouse.move(
           Math.random() * 1000, 
@@ -127,8 +131,11 @@ export class StealthBrowser {
           window.scrollBy(0, window.innerHeight / 2);
       });
       
-      // Random delay (1-3 seconds)
-      const delay = Math.floor(Math.random() * 2000) + 1000;
+      // Random delay (1-3 seconds normal, 0.3-1s fast)
+      const delay = fastMode 
+          ? Math.floor(Math.random() * 700) + 300 
+          : Math.floor(Math.random() * 2000) + 1000;
+          
       await new Promise(r => setTimeout(r, delay));
   }
 }

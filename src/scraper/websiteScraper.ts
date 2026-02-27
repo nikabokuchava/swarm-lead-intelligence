@@ -135,8 +135,8 @@ export async function scrapeEmailsFromWebsite(
                     timeout: 15000 
                 });
 
-                // Simulate human reading
-                await browser.simulateHuman(page);
+                // Simulate human reading with fastMode=true since it's a low-risk external site
+                await browser.simulateHuman(page, true);
 
                 // Get page content
                 const html = await page.content();
@@ -181,7 +181,7 @@ export async function scrapeEmailsFromWebsite(
         if (page) {
             try {
                 await page.close();
-            } catch (e) { /* ignore close errors */ }
+            } catch { /* ignore close errors */ }
         }
     }
 
