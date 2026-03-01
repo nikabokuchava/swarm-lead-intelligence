@@ -78,9 +78,15 @@ export class GoogleMapsScraper {
     }
 
     async search(query: string) {
-        const url = `https://www.google.com/maps/search/${query.replace(/ /g, '+')}?hl=en`;
+        const gl = process.env.GOOGLE_MAPS_GL || 'us';
+        const url = `https://www.google.com/maps/search/${encodeURIComponent(query)}?hl=en&gl=${gl}`;
         logger.info(`🔍 Searching: ${url}`);
         await this.page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+
+        // Simulate human behavior after navigation to reduce bot-detection risk
+        if (this._stealthBrowser) {
+            await this._stealthBrowser.simulateHuman(this.page!, true);
+        }
     }
 
     async collectResultLinks(maxResults: number): Promise<string[]> {
@@ -182,6 +188,11 @@ export class GoogleMapsScraper {
         logger.info(`👉 Processing: ${href}`);
         await this.page!.goto(href, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+        // Simulate human behavior after navigating to each business detail page
+        if (this._stealthBrowser) {
+            await this._stealthBrowser.simulateHuman(this.page!, true);
+        }
+
         try {
             await this.page!.waitForSelector('h1.DUwDvf', { timeout: 15000 });
         } catch {
@@ -210,13 +221,23 @@ export class GoogleMapsScraper {
             const webEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement | null;
             const website = webEl?.href ?? null;
 
-            // Rating & Review extraction per Plan
-            const contextText = document.querySelector('h1')?.parentElement?.parentElement?.innerText || document.body.innerText;
-            const ratingMatch = contextText.match(/\d\.\d/);
-            const rating = ratingMatch ? parseFloat(ratingMatch[0]) : null;
+            // Rating: deterministic extraction via aria-label (same pattern as Phone/Address)
+            const ratingEl = ariaElements.find(el => {
+                const label = el.getAttribute('aria-label') || '';
+                return /[\d.]+\s*star/i.test(label);
+            });
+            const ratingLabel = ratingEl?.getAttribute('aria-label') || '';
+            const ratingParsed = ratingLabel.match(/([\d.]+)\s*star/i);
+            const rating = ratingParsed ? parseFloat(ratingParsed[1]) : null;
 
-            const reviewMatch = contextText.match(/([\d,]+)\s*reviews/i) || contextText.match(/\(([\d,]+)\)/);
-            const reviewCount = reviewMatch ? parseInt(reviewMatch[1].replace(/,/g, ''), 10) : null;
+            // Review Count: deterministic extraction via aria-label
+            const reviewEl = ariaElements.find(el => {
+                const label = el.getAttribute('aria-label') || '';
+                return /[\d,]+\s*review/i.test(label);
+            });
+            const reviewLabel = reviewEl?.getAttribute('aria-label') || '';
+            const reviewParsed = reviewLabel.match(/([\d,]+)\s*review/i);
+            const reviewCount = reviewParsed ? parseInt(reviewParsed[1].replace(/,/g, ''), 10) : null;
 
             return { name, phone, website, address, rating, reviewCount };
         });

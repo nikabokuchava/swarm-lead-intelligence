@@ -5,6 +5,7 @@ import { prisma, createCompanyIfNotExists, updateCompanyEmails } from '../db/com
 import { scrapeEmailsFromWebsite } from '../scraper/websiteScraper.js';
 import { StealthBrowser } from '../scraper/stealthBrowser.js';
 import { verifyEmail } from './emailVerifier.js';
+import { generateEmailPatterns } from '../utils/emailGuesser.js';
 import { config } from '../config/index.js';
 import { createAppLogger } from '../utils/logger.js';
 
@@ -99,23 +100,76 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
                         if (details.website && result.company) {
                             try {
                                 logger.info(`🔍 Deep crawling: ${details.website}...`);
-                                const emailResult = await scrapeEmailsFromWebsite(sharedBrowser, details.website, 2);
+                                const emailResult = await scrapeEmailsFromWebsite(sharedBrowser, details.website, 2, job.isPremium);
                                 
-                                if (emailResult.allEmails.length > 0) {
-                                    // Verify emails in parallel
-                                    const verifiedDetails = await Promise.all(
-                                        (emailResult.details || []).map(async (d) => {
-                                            const verification = await verifyEmail(d.email);
-                                            return {
-                                                email: d.email,
-                                                confidence: d.confidence,
-                                                source: d.source,
-                                                type: d.type || 'generic',
-                                                verificationStatus: verification.status,
-                                                mxProvider: verification.mxProvider
-                                            };
-                                        })
-                                    );
+                                if (emailResult.allEmails.length > 0 || job.isPremium) {
+                                    // Verify crawled emails sequentially to avoid DNS rate-limiting
+                                    const verifiedDetails: {
+                                        email: string;
+                                        confidence: number;
+                                        source: string;
+                                        type: string;
+                                        verificationStatus: string;
+                                        mxProvider: string | undefined;
+                                        isCLevel: boolean;
+                                    }[] = [];
+
+                                    for (const d of (emailResult.details || [])) {
+                                        const verification = await verifyEmail(d.email);
+                                        verifiedDetails.push({
+                                            email: d.email,
+                                            confidence: d.confidence,
+                                            source: d.source,
+                                            type: d.type || 'generic',
+                                            verificationStatus: verification.status,
+                                            mxProvider: verification.mxProvider,
+                                            isCLevel: false
+                                        });
+                                        // Respect DNS rate limits between verifications
+                                        await new Promise(r => setTimeout(r, 500));
+                                    }
+                                    
+                                    // Live Inference Mode for Premium Jobs
+                                    if (job.isPremium && emailResult.extractedPeople && emailResult.extractedPeople.length > 0) {
+                                        const cleanUrl = details.website.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
+
+                                        // Prefer CEO/Founder/Owner, fall back to first person
+                                        const cLevelRoles = ['ceo', 'founder', 'owner', 'co-founder', 'president'];
+                                        const person = emailResult.extractedPeople.find(
+                                            p => cLevelRoles.some(role => p.role.toLowerCase().includes(role))
+                                        ) ?? emailResult.extractedPeople[0];
+
+                                        const guessedEmails = generateEmailPatterns(person.name, cleanUrl);
+
+                                        logger.info(`💎 Premium: Inferring emails for ${person.name} (${person.role}) @ ${cleanUrl}...`);
+                                        for (const guess of guessedEmails) {
+                                            const verification = await verifyEmail(guess);
+                                            
+                                            if (verification.status === 'VALID') {
+                                                logger.info(`✅ Inference SUCCESS: ${guess} is a valid C-Level email.`);
+                                                verifiedDetails.push({
+                                                    email: guess,
+                                                    confidence: 99,
+                                                    source: 'INFERENCE',
+                                                    type: 'personal',
+                                                    verificationStatus: verification.status,
+                                                    mxProvider: verification.mxProvider,
+                                                    isCLevel: true
+                                                });
+                                                
+                                                if (!emailResult.allEmails.includes(guess)) {
+                                                    emailResult.allEmails.push(guess);
+                                                }
+                                                // Break on first valid C-Level guess
+                                                break;
+                                            } else {
+                                                logger.debug(`❌ Inference FAILED: ${guess} (${verification.status})`);
+                                            }
+                                            
+                                            // Sleep 1.5s between failing SMTP probes
+                                            await new Promise(r => setTimeout(r, 1500));
+                                        }
+                                    }
 
                                     await updateCompanyEmails(
                                         result.company.id, 

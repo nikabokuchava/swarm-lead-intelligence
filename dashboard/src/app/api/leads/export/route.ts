@@ -20,29 +20,43 @@ export async function GET(req: NextRequest) {
     const leads = await prisma.company.findMany({
       where: whereClause,
       orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: { contacts: true },
-        },
-      },
+      include: { contacts: true },
     });
 
-    const csvHeaders = ['Name', 'Website', 'Phone', 'Address', 'Emails', 'Status', 'Contacts Count', 'Rating', 'Review Count'];
-    const csvRows = leads.map(lead => {
-      // Escape CSV fields properly
-      const escape = (str: string | null) => str ? `"${str.replace(/"/g, '""')}"` : '';
-      
-      return [
+    const escape = (val: string | number | null | undefined): string => {
+      if (val == null || val === '') return '';
+      const str = String(val);
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    const csvHeaders = [
+      'Company Name', 'Website', 'Phone', 'Address', 'Rating', 'Review Count',
+      'Contact Name', 'Email', 'Email Type', 'Confidence (%)', 'Verification Status', 'MX Provider',
+    ];
+
+    const csvRows = leads.flatMap(lead => {
+      const companyFields = [
         escape(lead.name),
         escape(lead.website),
         escape(lead.phone),
         escape(lead.address),
-        escape(lead.emails ? lead.emails.join('; ') : null),
-        lead.status,
-        lead._count.contacts,
-        lead.rating || '',
-        lead.reviewCount || ''
-      ].join(',');
+        escape(lead.rating),
+        escape(lead.reviewCount),
+      ];
+
+      if (lead.contacts.length === 0) {
+        return [[ ...companyFields, '', '', '', '', '', '' ].join(',')];
+      }
+
+      return lead.contacts.map(c => [
+        ...companyFields,
+        escape(c.fullName),
+        escape(c.workEmail),
+        escape(c.emailType),
+        escape(c.confidenceScore != null ? Math.round(c.confidenceScore) : null),
+        escape(c.verificationStatus),
+        escape(c.mxProvider),
+      ].join(','));
     });
 
     const csvContent = [csvHeaders.join(','), ...csvRows].join('\n');

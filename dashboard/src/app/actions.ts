@@ -22,6 +22,7 @@ export async function createScrapeJob(formData: FormData) {
   const query = formData.get('query') as string;
   const maxResults = Number(formData.get('maxResults')) || 20;
   const zipCodesRaw = formData.get('zipCodes') as string | null;
+  const isPremium = formData.get('isPremium') === 'on';
 
   if (!query || query.trim() === '') {
     throw new Error('Query is required');
@@ -39,8 +40,9 @@ export async function createScrapeJob(formData: FormData) {
       data: {
         query,
         maxResults,
+        isPremium,
         status: 'PROCESSING', // Parent immediately PROCESSING
-        userId: userId, // <--- 
+        userId: userId, // <---
         tasks: {
           create: zipCodes.length > 0 
             ? zipCodes.map(zipCode => ({

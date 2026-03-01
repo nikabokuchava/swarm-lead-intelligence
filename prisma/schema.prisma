@@ -61,13 +61,15 @@ model Contact {
   // Verification Fields
   verificationStatus String @default("UNKNOWN") @map("verification_status") // VALID, INVALID, UNKNOWN
   mxProvider         String?                    @map("mx_provider")         // Google, Outlook, etc.
+  isCLevel           Boolean  @default(false)   @map("is_c_level")
   
   createdAt       DateTime @default(now()) @map("created_at")
   
   scrapeJob ScrapeJob? @relation(fields: [jobId], references: [id])
   
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+
+  @@unique([companyId, workEmail])
   @@map("contacts")
 }
 
@@ -76,6 +78,7 @@ model ScrapeJob {
   userId       String    @map("user_id") @default("admin")
   query        String
   status       ProcessingStatus @default(PENDING)
+  isPremium    Boolean   @default(false) @map("is_premium")
   maxResults   Int?      @map("max_results")
   resultsFound Int       @default(0) @map("results_found")
   createdAt    DateTime  @default(now()) @map("created_at")

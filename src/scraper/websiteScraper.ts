@@ -16,6 +16,7 @@ interface ScrapedEmailResult {
     pagesScraped: string[];
     error?: string;
     details?: { email: string; confidence: number; source: string; type?: string }[];
+    extractedPeople?: { name: string; role: string }[];
 }
 
 // Pages to check for contact info
@@ -76,15 +77,17 @@ async function findInternalContactLinks(page: Page, baseUrl: string): Promise<st
  * Scrape emails from a company website using Stealth Agent & Deep Crawl
  */
 export async function scrapeEmailsFromWebsite(
-    providedBrowser: StealthBrowser | null, 
+    providedBrowser: StealthBrowser | null,
     websiteUrl: string,
-    maxPages = 3
+    maxPages = 3,
+    isPremium = false
 ): Promise<ScrapedEmailResult> {
     const result: ScrapedEmailResult = {
         primaryEmail: null,
         allEmails: [],
         pagesScraped: [],
-        details: []
+        details: [],
+        extractedPeople: []
     };
 
     if (!websiteUrl) {
@@ -104,6 +107,7 @@ export async function scrapeEmailsFromWebsite(
     const parser = new HybridParser();
     
     const allFindings: { email: string; confidence: number; source: string; type?: string }[] = [];
+    const allPeople: { name: string; role: string }[] = [];
     const visitedUrls = new Set<string>();
     const urlsToVisit: string[] = [baseUrl]; // Start with homepage
 
@@ -141,12 +145,15 @@ export async function scrapeEmailsFromWebsite(
                 // Get page content
                 const html = await page.content();
                 
-                // Extract emails using Hybrid Parser
-                const extracted = await parser.extract(html, false); 
-                
-                if (extracted.length > 0) {
-                    allFindings.push(...extracted);
-                    if (process.env.DEBUG) console.log(`[DeepCrawl] Found ${extracted.length} emails on ${targetUrl}`);
+                // Extract emails using Hybrid Parser (force LLM for premium to get people)
+                const extracted = await parser.extract(html, isPremium);
+
+                if (extracted.emails.length > 0) {
+                    allFindings.push(...extracted.emails);
+                    if (process.env.DEBUG) console.log(`[DeepCrawl] Found ${extracted.emails.length} emails on ${targetUrl}`);
+                }
+                if (extracted.keyPeople.length > 0) {
+                    allPeople.push(...extracted.keyPeople);
                 }
 
                 // Deep Crawl: If we are on the homepage, look for more links
@@ -206,6 +213,15 @@ export async function scrapeEmailsFromWebsite(
     // Sort by confidence
     const bestMatch = uniqueResults.sort((a, b) => b.confidence - a.confidence)[0];
     result.primaryEmail = bestMatch ? bestMatch.email : null;
+
+    // Deduplicate extracted people by name
+    const seenNames = new Set<string>();
+    result.extractedPeople = allPeople.filter(p => {
+        const key = p.name.toLowerCase();
+        if (seenNames.has(key)) return false;
+        seenNames.add(key);
+        return true;
+    });
 
     return result;
 }

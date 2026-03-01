@@ -101,6 +101,7 @@ export async function updateCompanyEmails(
         type?: string;
         verificationStatus?: string;
         mxProvider?: string;
+        isCLevel?: boolean;
     }[] = [],
     jobId?: string
 ) {
@@ -114,23 +115,33 @@ export async function updateCompanyEmails(
         }
     });
 
-    // 2. Create detailed Contact records
+    // 2. Create detailed Contact records (deduplicated)
     if (details.length > 0) {
-        const contactsData = details.map(d => ({
+        // In-memory dedup by normalized email before hitting DB
+        const seen = new Set<string>();
+        const dedupedDetails = details.filter(d => {
+            const key = d.email.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+        const contactsData = dedupedDetails.map(d => ({
              companyId: companyId,
-             workEmail: d.email, // Map to correct Prisma field
+             workEmail: d.email,
              confidenceScore: d.confidence,
              emailSource: d.source,
              emailType: d.type || 'generic',
              verificationStatus: d.verificationStatus || 'UNKNOWN',
              mxProvider: d.mxProvider,
              jobId: jobId,
-             userId: undefined, // Contacts don't strictly need userId if linked to company, but schema might require it? checks schema... No, schema doesn't have userId on contact.
-             fullName: 'Unknown' // Default, as we don't extract names yet
+             fullName: 'Unknown',
+             isCLevel: d.isCLevel ?? false
         }));
 
         await prisma.contact.createMany({
-            data: contactsData
+            data: contactsData,
+            skipDuplicates: true,
         });
     }
 }
