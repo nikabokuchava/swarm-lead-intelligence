@@ -3,6 +3,7 @@ import { getNextPendingLead, completeJob, failJobOrRetry } from './db/queue.js';
 import { updateCompanyEmails, connectDB, disconnectDB } from './db/company.js';
 import { StealthBrowser } from './scraper/stealthBrowser.js';
 import { scrapeEmailsFromWebsite } from './scraper/websiteScraper.js';
+import { verifyEmail } from './services/emailVerifier.js';
 import * as crypto from 'crypto';
 import { createAppLogger } from './utils/logger.js';
 
@@ -107,7 +108,32 @@ async function runWorker() {
                             logger.info(`🤷 No emails found for ${job.name}`);
                         }
 
-                        await updateCompanyEmails(job.id, result.allEmails, result.details);
+                        // Sequential email verification — respects DNS rate limits
+                        const verifiedDetails: {
+                            email: string;
+                            confidence: number;
+                            source: string;
+                            type: string;
+                            verificationStatus: string;
+                            mxProvider: string | undefined;
+                            isCLevel: boolean;
+                        }[] = [];
+
+                        for (const d of (result.details || [])) {
+                            const verification = await verifyEmail(d.email);
+                            verifiedDetails.push({
+                                email: d.email,
+                                confidence: d.confidence,
+                                source: d.source,
+                                type: d.type || 'generic',
+                                verificationStatus: verification.status,
+                                mxProvider: verification.mxProvider,
+                                isCLevel: false
+                            });
+                            await new Promise(r => setTimeout(r, 500));
+                        }
+
+                        await updateCompanyEmails(job.id, result.allEmails, verifiedDetails, job.jobId ?? undefined);
                         await completeJob(job.id, true);
                     }
 
