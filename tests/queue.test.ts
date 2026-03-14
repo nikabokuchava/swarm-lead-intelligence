@@ -6,10 +6,39 @@ vi.mock('../src/db/prisma', () => ({
         company: {
             updateMany: vi.fn(),
             update: vi.fn(),
+            count: vi.fn(),
+        },
+        scrapeTask: {
+            count: vi.fn(),
+            update: vi.fn(),
+            findUnique: vi.fn(),
+        },
+        scrapeJob: {
+            update: vi.fn(),
         },
         $queryRaw: vi.fn(),
+        $transaction: vi.fn(),
     },
 }));
+
+vi.mock('../src/scraper/googleMapsScraper', () => ({
+    GoogleMapsScraper: class {
+        init() { return Promise.resolve(); }
+        search() { return Promise.resolve(); }
+        collectResultLinks() { return Promise.resolve([]); }
+        extractDetails() { return Promise.resolve({}); }
+        close() { return Promise.resolve(); }
+    }
+}));
+
+vi.mock('../src/scraper/stealthBrowser', () => ({
+    StealthBrowser: class {
+        launch() { return Promise.resolve(); }
+        close() { return Promise.resolve(); }
+    }
+}));
+
+
 
 import { resetStalledJobs, completeJob, failJobOrRetry } from '../src/db/queue';
 import { prisma } from '../src/db/prisma';
@@ -152,6 +181,48 @@ describe('Queue System', () => {
                 where: { id: 'company-1' },
                 data: { status: 'FAILED' },
             });
+        });
+    });
+
+    describe('Job Finalization (Transaction) in processJob', () => {
+        it('should update job status to COMPLETED and set resultsFound when all tasks finish', async () => {
+            const mockTx = {
+                scrapeTask: {
+                    count: vi.fn().mockResolvedValue(0),
+                },
+                company: {
+                    count: vi.fn().mockResolvedValue(42),
+                },
+                scrapeJob: {
+                    update: vi.fn(),
+                }
+            };
+            
+            (mockPrisma.$transaction as any).mockImplementation(async (callback: any) => {
+                return callback(mockTx);
+            });
+
+            (mockPrisma.scrapeTask.findUnique as any).mockResolvedValue({
+                id: 'task-1',
+                jobId: 'job-1',
+                query: 'test',
+                retries: 0,
+                maxRetries: 3,
+                scrapeJob: { id: 'job-1', userId: 'user-1' }
+            });
+
+            // Use dynamic import so earlier isolated tests aren't affected by module load side-effects
+            const { processJob } = await import('../src/services/scraperService');
+            await processJob('task-1', true);
+
+            (expect(mockTx.scrapeJob.update) as any).toHaveBeenCalledWith({
+                where: { id: 'job-1' },
+                data: expect.objectContaining({
+                    status: 'COMPLETED',
+                    resultsFound: 42
+                })
+            });
+            (expect(mockTx.company.count) as any).toHaveBeenCalledWith({ where: { jobId: 'job-1' } });
         });
     });
 });

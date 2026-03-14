@@ -39,4 +39,9 @@ describe('Worker: Memory Safety', () => {
     it('should force browser restart on crash recovery', () => {
         expect(workerSource).toContain("rotateBrowser('crash recovery')");
     });
+
+    it('should trigger rotateBrowser when browser.isConnected() returns false', () => {
+        expect(workerSource).toContain("!browser.isConnected()");
+        expect(workerSource).toContain("rotateBrowser('browser disconnected')");
+    });
 });
