@@ -150,4 +150,57 @@ describe('HybridParser', () => {
         expect(emails).toContain('admin@site.co');
         expect(emails).toContain('ceo@firm.uk');
     });
+
+    // --- HTML sanitization concatenation garbage ---
+
+    it('should reject phone-concatenated local parts (e.g., 6473reservation@)', async () => {
+        const html = '<p>6473reservation@bestclinic.com real@bestclinic.com</p>';
+        const result = await parser.extract(html);
+
+        const emails = result.emails.map(r => r.email);
+        expect(emails).not.toContain('6473reservation@bestclinic.com');
+        expect(emails).toContain('real@bestclinic.com');
+    });
+
+    it('should not include trailing domain suffix from HTML concatenation (e.g., gmail.com-ra)', async () => {
+        const html = '<p>test@gmail.com-ra real@bestclinic.com</p>';
+        const result = await parser.extract(html);
+
+        const emails = result.emails.map(r => r.email);
+        expect(emails).not.toContain('test@gmail.com-ra');
+        expect(emails).toContain('test@gmail.com');
+    });
+
+    it('should reject concatenated TLD from sanitization (e.g., .com.can)', async () => {
+        const html = '<p>info@bestclinic.com.can real@bestclinic.com</p>';
+        const result = await parser.extract(html);
+
+        const emails = result.emails.map(r => r.email);
+        expect(emails).not.toContain('info@bestclinic.com.can');
+    });
+
+    it('should reject URL-merged local parts (e.g., pmwww.domain.huinfo@)', async () => {
+        const html = '<p>pmwww.bestclinic.huinfo@bestclinic.hu real@bestclinic.com</p>';
+        const result = await parser.extract(html);
+
+        const emails = result.emails.map(r => r.email);
+        expect(emails).not.toContain('pmwww.bestclinic.huinfo@bestclinic.hu');
+        expect(emails).toContain('real@bestclinic.com');
+    });
+
+    it('should reject concatenated TLD segments (e.g., .huinfo)', async () => {
+        const html = '<p>events@bestclinic.huinfo real@bestclinic.com</p>';
+        const result = await parser.extract(html);
+
+        const emails = result.emails.map(r => r.email);
+        expect(emails).not.toContain('events@bestclinic.huinfo');
+        expect(emails).toContain('real@bestclinic.com');
+    });
+
+    it('should still accept legitimate double-TLD domains (e.g., .co.uk)', async () => {
+        const html = '<p>first.last@company.co.uk</p>';
+        const result = await parser.extract(html);
+
+        expect(result.emails.some(r => r.email === 'first.last@company.co.uk')).toBe(true);
+    });
 });

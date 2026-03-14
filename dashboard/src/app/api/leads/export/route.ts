@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       'Contact Name', 'Email', 'Email Type', 'Confidence (%)', 'Verification Status', 'MX Provider',
     ];
 
-    const csvRows = leads.flatMap(lead => {
+    const csvRows = leads.map(lead => {
       const companyFields = [
         escape(lead.name),
         escape(lead.website),
@@ -44,19 +44,23 @@ export async function GET(req: NextRequest) {
         escape(lead.reviewCount),
       ];
 
-      if (lead.contacts.length === 0) {
-        return [[ ...companyFields, '', '', '', '', '', '' ].join(',')];
-      }
+      const best = lead.contacts.length > 0
+        ? [...lead.contacts].sort((a, b) => {
+            if (a.verificationStatus === 'VALID' && b.verificationStatus !== 'VALID') return -1;
+            if (b.verificationStatus === 'VALID' && a.verificationStatus !== 'VALID') return 1;
+            return (b.confidenceScore ?? 0) - (a.confidenceScore ?? 0);
+          })[0]
+        : null;
 
-      return lead.contacts.map(c => [
+      return [
         ...companyFields,
-        escape(c.fullName),
-        escape(c.workEmail),
-        escape(c.emailType),
-        escape(c.confidenceScore != null ? Math.round(c.confidenceScore) : null),
-        escape(c.verificationStatus),
-        escape(c.mxProvider),
-      ].join(','));
+        escape(best?.fullName),
+        escape(best?.workEmail),
+        escape(best?.emailType),
+        escape(best?.confidenceScore != null ? Math.round(best.confidenceScore) : null),
+        escape(best?.verificationStatus),
+        escape(best?.mxProvider),
+      ].join(',');
     });
 
     const csvContent = [csvHeaders.join(','), ...csvRows].join('\n');

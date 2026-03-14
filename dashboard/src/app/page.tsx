@@ -13,7 +13,7 @@ const pricingPlans = [
     credits: "1,000",
     price: 19,
     icon: Zap,
-    features: ["1,000 scrape credits", "Email extraction", "CSV export", "Standard support"],
+    features: ["1,000 lead credits", "Email extraction", "CSV export", "Standard support"],
     popular: false,
     costPerLead: "$0.019",
   },
@@ -22,7 +22,7 @@ const pricingPlans = [
     credits: "5,000",
     price: 49,
     icon: TrendingUp,
-    features: ["5,000 scrape credits", "Email extraction", "CSV export", "Priority support", "Best value per credit"],
+    features: ["5,000 lead credits", "Email extraction", "CSV export", "Priority support", "Best value per credit"],
     popular: true,
     subtext: "Most Popular",
     costPerLead: "$0.0098",
@@ -32,7 +32,7 @@ const pricingPlans = [
     credits: "15,000",
     price: 99,
     icon: Building2,
-    features: ["15,000 scrape credits", "Email extraction", "CSV export", "Priority support", "Bulk operations", "Lowest cost per credit"],
+    features: ["15,000 lead credits", "Email extraction", "CSV export", "Priority support", "Bulk operations", "Lowest cost per credit"],
     popular: false,
     costPerLead: "$0.0066",
   },
@@ -61,7 +61,7 @@ const testimonials = [
 
 const faqs = [
   {
-    question: "Is it legal to scrape Google Maps?",
+    question: "Is it legal to collect data from Google Maps?",
     answer: "Yes. Our system extracts only publicly available business contact information (Name, Address, Phone, Website) that businesses intentionally publish. We automate what a human would do manually, respecting rate limits and privacy policies."
   },
   {
@@ -169,7 +169,7 @@ export default function LandingPage() {
         {/* CTA */}
         <div className="pt-4 flex flex-col items-center">
             <Link href="/dashboard" className="inline-flex items-center justify-center h-14 px-8 rounded-full bg-amber-500 text-black font-bold text-lg hover:bg-amber-400 transition-all shadow-[0_0_40px_-10px_rgba(245,158,11,0.4)] hover:shadow-[0_0_60px_-10px_rgba(245,158,11,0.6)] hover:-translate-y-0.5">
-                Start Scraping for Free <ArrowRight className="ml-2 w-5 h-5" />
+                Start Finding Leads for Free <ArrowRight className="ml-2 w-5 h-5" />
             </Link>
             <p className="mt-4 text-xs text-zinc-500 font-mono">
                 No credit card required. 100 free credits included.
@@ -289,7 +289,7 @@ export default function LandingPage() {
               Credits that <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 to-orange-600">scale with you</span>
             </h2>
             <p className="text-zinc-400 max-w-xl mx-auto">
-              Start free with 100 credits. Need more? Pick a plan and get scraping in seconds. <br/>
+              Start free with 100 credits. Need more? Pick a plan and start finding leads in seconds. <br/>
               <span className="text-zinc-500 text-sm font-semibold">One-time payment. No monthly subscription.</span>
             </p>
           </div>

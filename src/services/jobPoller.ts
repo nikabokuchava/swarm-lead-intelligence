@@ -42,7 +42,8 @@ export async function startPolling() {
                         scrapeJob: {
                             select: {
                                 userId: true,
-                                maxResults: true
+                                maxResults: true,
+                                resultsFound: true
                             }
                         }
                     }
@@ -51,13 +52,9 @@ export async function startPolling() {
                 if (task) {
                     console.log(`✨ Detected PENDING Task: ${task.id} - "${task.query}" (Zip: ${task.zipCode || 'NONE'})`);
 
-                    // Ensure quota is not exhausted right before processing
-                    const leadCount = await prisma.company.count({
-                        where: { jobId: task.jobId }
-                    });
-
-                    if (task?.scrapeJob?.maxResults && leadCount >= task.scrapeJob.maxResults) {
-                        console.log(`🛑 Quota reached for Job ${task.jobId} (${leadCount}/${task.scrapeJob.maxResults}). Cancelling running task ${task.id}.`);
+                    // Check quota via atomic counter (no expensive COUNT query)
+                    if (task?.scrapeJob?.maxResults && task.scrapeJob.resultsFound >= task.scrapeJob.maxResults) {
+                        console.log(`🛑 Quota reached for Job ${task.jobId} (${task.scrapeJob.resultsFound}/${task.scrapeJob.maxResults}). Cancelling remaining tasks.`);
                         await prisma.scrapeTask.updateMany({
                             where: {
                                 jobId: task.jobId,
@@ -73,6 +70,8 @@ export async function startPolling() {
 
                     if (result.success) {
                         consecutiveFailures = 0;
+                        // CPU breather: let GC run between back-to-back tasks
+                        await sleep(2000);
                     } else {
                         consecutiveFailures++;
                         console.warn(`⚠️ Task ${task.id} failed. Consecutive failures: ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);

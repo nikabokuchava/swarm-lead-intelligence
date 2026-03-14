@@ -44,6 +44,7 @@ export class StealthBrowser {
       '--no-first-run',
       '--no-zygote',
       '--disable-gpu',
+      '--disable-extensions',
     ];
 
     if (process.env.PROXY_SERVER) {
@@ -53,6 +54,7 @@ export class StealthBrowser {
     this.browser = await puppeteer.launch({
       channel: 'chrome',
       headless: true,
+      protocolTimeout: 120000,
       args,
     });
   }
@@ -75,7 +77,7 @@ export class StealthBrowser {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     page.on('request', (req: any) => {
       const resourceType = req.resourceType();
-      if (['image', 'font', 'media'].includes(resourceType)) {
+      if (['image', 'font', 'media', 'stylesheet'].includes(resourceType)) {
         req.abort();
       } else {
         req.continue();

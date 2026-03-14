@@ -14,7 +14,13 @@
     "verify:all": "tsx src/scripts/verify-leads.ts",
     "docker:up": "docker-compose up --build -d",
     "docker:down": "docker-compose down",
-    "generate-sample": "tsx src/scripts/generate-sample-csv.ts"
+    "generate-sample": "tsx src/scripts/generate-sample-csv.ts",
+    "export:premium": "tsx src/scripts/export_premium_csv.ts",
+    "seed:market": "tsx src/scripts/seed_us_market.ts",
+    "export:medspa": "tsx src/scripts/export-medspa.ts",
+    "seed:buyers": "tsx src/scripts/seed-agency-buyers.ts",
+    "export:buyers": "tsx src/scripts/export-agency-buyers.ts",
+    "reset-tasks": "tsx src/scripts/reset_tasks.ts"
   },
   "keywords": [],
   "author": "",

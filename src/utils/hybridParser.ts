@@ -31,6 +31,29 @@ const GENERIC_PREFIXES = new Set([
   'noreply', 'no-reply', 'webmaster', 'postmaster', 'abuse',
 ]);
 
+// gTLDs that signal double-TLD concatenation when found as penultimate domain segment
+const SUSPICIOUS_PENULT_TLDS = new Set([
+    'com', 'net', 'org', 'edu', 'gov', 'io', 'co', 'info', 'biz', 'dev', 'app',
+]);
+
+// Known TLDs for detecting concatenated TLD segments (e.g., "huinfo" = "hu"+"info")
+const KNOWN_TLDS = new Set([
+    'com', 'net', 'org', 'edu', 'gov', 'io', 'co', 'info', 'biz', 'dev', 'app',
+    'hu', 'de', 'fr', 'uk', 'nl', 'at', 'ch', 'it', 'es', 'pt', 'pl', 'cz',
+    'se', 'no', 'fi', 'dk', 'be', 'ie', 'ru', 'jp', 'cn', 'kr', 'au', 'nz',
+    'ca', 'mx', 'br', 'ar', 'in', 'us', 'za', 'tr', 'il', 'sg', 'hk', 'tw',
+    'id', 'pk', 'ng', 'my', 'eg', 'pro',
+]);
+
+// Legitimate country-code double TLD pairs (e.g., co.uk, com.au)
+const LEGIT_CCTLD_PAIRS = new Set([
+    'co.uk', 'com.au', 'co.jp', 'co.kr', 'co.nz', 'co.za', 'co.in',
+    'com.br', 'com.mx', 'com.ar', 'com.tr', 'co.il', 'com.sg', 'com.hk',
+    'org.uk', 'net.au', 'ac.uk', 'gov.uk', 'edu.au', 'com.cn', 'co.id',
+    'com.tw', 'or.jp', 'ne.jp', 'com.pk', 'com.ng', 'com.my',
+]);
+
+
 export class HybridParser {
   private openai = createOpenAI({
       apiKey: process.env.OPENAI_API_KEY,
@@ -104,12 +127,13 @@ export class HybridParser {
 
   private extractWithRegex(text: string): EmailExtractionResult[] {
     // Standard robust email regex: allows +/% in local part, alpha-only TLD (min 2 chars)
-    const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}\b/gi;
     const matches = text.match(emailRegex);
 
     if (!matches) return [];
 
     return matches
+        .map(email => this.cleanExtractedEmail(email))
         .filter(email => this.isValidEmail(email))
         .map(email => {
             const classification = this.classifyEmail(email);
@@ -120,6 +144,31 @@ export class HybridParser {
                 type: classification.type
             };
         });
+  }
+
+  private cleanExtractedEmail(raw: string): string {
+    const atIdx = raw.indexOf('@');
+    if (atIdx === -1) return raw;
+
+    let local = raw.substring(0, atIdx);
+    let domain = raw.substring(atIdx + 1);
+
+    // Strip leading digits concatenated with alpha (e.g., "6473reservation" → "reservation")
+    const stripped = local.replace(/^\d{3,}(?=[a-zA-Z])/, '');
+    if (stripped.length > 0) local = stripped;
+
+    // Strip trailing double-TLD from domain (e.g., "clinic.com.can" → "clinic.com")
+    const segments = domain.split('.');
+    if (segments.length >= 3) {
+        const penult = segments[segments.length - 2].toLowerCase();
+        const last = segments[segments.length - 1].toLowerCase();
+        if (SUSPICIOUS_PENULT_TLDS.has(penult) && !LEGIT_CCTLD_PAIRS.has(`${penult}.${last}`)) {
+            segments.pop();
+            domain = segments.join('.');
+        }
+    }
+
+    return `${local}@${domain}`;
   }
 
   private extractObfuscated(text: string): EmailExtractionResult[] {
@@ -142,23 +191,31 @@ export class HybridParser {
   }
 
   private isValidEmail(email: string): boolean {
-    // Basic structure check
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false;
+    if (!email.includes('@') || !email.includes('.')) return false;
 
-    const atIndex = email.indexOf('@');
-    const localPart = email.substring(0, atIndex);
-    const domain = email.substring(atIndex + 1);
-
-    // Reject if local part has 8+ consecutive digits (phone number prefix garbage)
-    if (/\d{8,}/.test(localPart)) return false;
-
-    // Extract TLD (last segment after final dot)
+    const domain = email.split('@')[1] || '';
     const tld = domain.split('.').pop() || '';
 
-    // Reject if TLD is too long (>6 chars) or contains non-alpha chars
+    // 1. Strict TLD validation (rejects .huinfo, .com-ra)
     if (tld.length > 6 || !/^[a-zA-Z]+$/.test(tld)) return false;
 
-    // Reject known garbage/URL fragment patterns
+    // 2. Reject emails starting with suspicious concatenated numbers (e.g., 6473reservation)
+    if (/^\d{4,}[a-zA-Z]/i.test(email)) return false;
+
+    // 3. Reject emails merged with URLs (e.g., pmwww.domain.cominfo@...)
+    if (/^(pm)?www\./i.test(email) || email.includes('http')) return false;
+
+    // 4. Reject TLD that looks like two TLDs concatenated (e.g., "huinfo" = "hu" + "info")
+    if (tld.length >= 4) {
+        const lowerTld = tld.toLowerCase();
+        for (let i = 2; i < lowerTld.length; i++) {
+            if (KNOWN_TLDS.has(lowerTld.substring(0, i)) && KNOWN_TLDS.has(lowerTld.substring(i))) {
+                return false;
+            }
+        }
+    }
+
+    // 5. Reject known garbage/URL fragment patterns
     if (/follofollo|javascript:|void\(|undefined/i.test(email)) return false;
 
     return true;

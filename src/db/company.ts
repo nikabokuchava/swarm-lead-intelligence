@@ -61,6 +61,14 @@ export async function createCompanyIfNotExists(data: CompanyData) {
             }
         });
 
+        // Atomic increment: track real-time quota on parent job
+        if (data.jobId) {
+            await tx.scrapeJob.update({
+                where: { id: data.jobId },
+                data: { resultsFound: { increment: 1 } }
+            });
+        }
+
         return { company, isDuplicate: false };
     });
 }
@@ -139,10 +147,14 @@ export async function updateCompanyEmails(
              isCLevel: d.isCLevel ?? false
         }));
 
-        await prisma.contact.createMany({
-            data: contactsData,
-            skipDuplicates: true,
-        });
+        try {
+            await prisma.contact.createMany({
+                data: contactsData,
+                skipDuplicates: true,
+            });
+        } catch (err) {
+            console.warn('⚠️ Failed to batch insert contacts (possible constraint conflict).', err);
+        }
     }
 }
 

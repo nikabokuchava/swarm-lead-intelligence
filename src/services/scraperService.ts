@@ -133,11 +133,26 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
                                     if (job.isPremium && emailResult.extractedPeople && emailResult.extractedPeople.length > 0) {
                                         const cleanUrl = details.website.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
 
+                                        // Filter out garbage names from LLM extraction
+                                        const junkPatterns = /not specified|unknown|n\/a|none|unavailable/i;
+                                        const validPeople = emailResult.extractedPeople.filter(p => {
+                                            const name = (p.name || '').trim();
+                                            const role = (p.role || '').trim();
+                                            if (name.length < 3) return false;
+                                            if (junkPatterns.test(name)) return false;
+                                            if (junkPatterns.test(role)) return false;
+                                            return true;
+                                        });
+
+                                        if (validPeople.length === 0) {
+                                            logger.debug(`No valid human names found for inference on ${cleanUrl}. Skipping.`);
+                                        } else {
+
                                         // Prefer CEO/Founder/Owner, fall back to first person
                                         const cLevelRoles = ['ceo', 'founder', 'owner', 'co-founder', 'president'];
-                                        const person = emailResult.extractedPeople.find(
+                                        const person = validPeople.find(
                                             p => cLevelRoles.some(role => p.role.toLowerCase().includes(role))
-                                        ) ?? emailResult.extractedPeople[0];
+                                        ) ?? validPeople[0];
 
                                         const guessedEmails = generateEmailPatterns(person.name, cleanUrl);
 
@@ -169,6 +184,7 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
                                             // Sleep 1.5s between failing SMTP probes
                                             await new Promise(r => setTimeout(r, 1500));
                                         }
+                                    } // end validPeople else
                                     }
 
                                     await updateCompanyEmails(
