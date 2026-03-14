@@ -221,36 +221,47 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
             }
         });
 
-        // Check if all tasks for this job are completed
-        const pendingTasks = await prisma.scrapeTask.count({
-            where: { 
-                jobId: job.id,
-                status: { in: ['PENDING', 'PROCESSING'] }
-            }
-        });
-
-        if (pendingTasks === 0) {
-            const finalCount = await prisma.company.count({ where: { jobId: job.id }});
-            await prisma.scrapeJob.update({
-                where: { id: job.id },
-                data: { 
-                    status: 'COMPLETED',
-                    completedAt: new Date(),
-                    resultsFound: finalCount
+        // Atomic finalization: count + conditional update in a single transaction
+        await prisma.$transaction(async (tx) => {
+            const pendingTasks = await tx.scrapeTask.count({
+                where: {
+                    jobId: job.id,
+                    status: { in: ['PENDING', 'PROCESSING'] }
                 }
             });
-            logger.info(`🏁 Job ${job.id} Fully Completed. Total Leads: ${finalCount}`);
-        }
+
+            if (pendingTasks === 0) {
+                const finalCount = await tx.company.count({ where: { jobId: job.id } });
+                await tx.scrapeJob.update({
+                    where: { id: job.id },
+                    data: {
+                        status: 'COMPLETED',
+                        completedAt: new Date(),
+                        resultsFound: finalCount
+                    }
+                });
+                logger.info(`🏁 Job ${job.id} Fully Completed. Total Leads: ${finalCount}`);
+            }
+        });
 
         logger.info(`🏁 Task ${taskId} Completed. Added: ${added}, Skipped: ${skipped}`);
         return { success: true, added, skipped };
 
     } catch (error) {
         logger.error(`❌ Task ${taskId} Failed:`, error);
-        await prisma.scrapeTask.update({
-            where: { id: taskId },
-            data: { status: 'FAILED' }
-        });
+        const currentTask = await prisma.scrapeTask.findUnique({ where: { id: taskId } });
+        if (currentTask && currentTask.retries < currentTask.maxRetries) {
+            await prisma.scrapeTask.update({
+                where: { id: taskId },
+                data: { retries: { increment: 1 }, status: 'PENDING' }
+            });
+            logger.info(`🔄 Task ${taskId} retry ${currentTask.retries + 1}/${currentTask.maxRetries}`);
+        } else {
+            await prisma.scrapeTask.update({
+                where: { id: taskId },
+                data: { status: 'FAILED' }
+            });
+        }
         return { success: false, error };
     } finally {
         // ARC-02: scraper only closes its page, sharedBrowser owns the process

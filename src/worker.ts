@@ -67,6 +67,12 @@ async function runWorker() {
 
         // Infinite Processing Loop
         while (!isShuttingDown) {
+            // Proactive browser health check before processing
+            if (!browser.isConnected()) {
+                logger.warn('⚠️ Browser disconnected, rotating...');
+                await rotateBrowser('browser disconnected');
+            }
+
             try {
                 try {
                     // 1. Fetch Next Job

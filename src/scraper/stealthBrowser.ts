@@ -33,6 +33,10 @@ export class StealthBrowser {
     return this.pages.length;
   }
 
+  isConnected(): boolean {
+    return this.browser !== null && this.browser.isConnected();
+  }
+
   async launch() {
     if (this.browser) return;
 

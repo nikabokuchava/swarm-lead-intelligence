@@ -115,8 +115,10 @@ model ScrapeTask {
   query     String           // Need query for the worker so it doesn't have to join job
   status    ProcessingStatus @default(PENDING)
   workerId  String?          @map("worker_id")
-  lockedAt  DateTime?        @map("locked_at")
-  createdAt DateTime         @default(now()) @map("created_at")
+  lockedAt   DateTime?        @map("locked_at")
+  retries    Int              @default(0)
+  maxRetries Int              @default(3) @map("max_retries")
+  createdAt  DateTime         @default(now()) @map("created_at")
 
   scrapeJob ScrapeJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
   
