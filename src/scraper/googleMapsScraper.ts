@@ -85,7 +85,7 @@ export class GoogleMapsScraper {
 
         // Simulate human behavior after navigation to reduce bot-detection risk
         if (this._stealthBrowser) {
-            await this._stealthBrowser.simulateHuman(this.page!, true);
+            await this._stealthBrowser.simulateHuman(this.page!, 'high');
         }
     }
 
@@ -157,7 +157,7 @@ export class GoogleMapsScraper {
                 break;
             }
             
-            if (noChangeCount >= 3) {
+            if (noChangeCount >= 6) {
                 // Check if Google Maps explicitly told us there are no more results
                 const isEndOfList = await this.page!.evaluate(() => {
                     const markers = Array.from(document.querySelectorAll('span, p, div'));
@@ -169,7 +169,7 @@ export class GoogleMapsScraper {
                     break;
                 }
 
-                logger.info('🛑 No new results after 3 scrolls. Stopping collection.');
+                logger.info('🛑 No new results after 6 scrolls. Stopping collection.');
                 break;
             }
         }
@@ -190,7 +190,7 @@ export class GoogleMapsScraper {
 
         // Simulate human behavior after navigating to each business detail page
         if (this._stealthBrowser) {
-            await this._stealthBrowser.simulateHuman(this.page!, true);
+            await this._stealthBrowser.simulateHuman(this.page!, 'medium');
         }
 
         try {

@@ -9,10 +9,11 @@ import { Company, ProcessingStatus } from '@prisma/client';
 export async function getNextPendingLead(workerId: string): Promise<Company | null> {
     try {
         // Use raw query for SKIP LOCKED functionality which isn't natively supported in Prisma Client yet
-        const result = await prisma.$queryRaw<Company[]>`
+        // Only return the id — then use Prisma findUnique to get properly mapped camelCase fields
+        const result = await prisma.$queryRaw<{ id: string }[]>`
             UPDATE "companies"
-            SET status = 'PROCESSING'::"ProcessingStatus", 
-                "worker_id" = ${workerId}, 
+            SET status = 'PROCESSING'::"ProcessingStatus",
+                "worker_id" = ${workerId},
                 "locked_at" = NOW(),
                 "retries" = "retries" + 1
             WHERE id = (
@@ -23,13 +24,14 @@ export async function getNextPendingLead(workerId: string): Promise<Company | nu
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING *;
+            RETURNING id;
         `;
 
-        const rows = result as unknown as Company[];
+        const rows = result as unknown as { id: string }[];
 
         if (rows && rows.length > 0) {
-            return rows[0];
+            // Re-fetch via Prisma to get proper camelCase field mapping (jobId, workerId, etc.)
+            return await prisma.company.findUnique({ where: { id: rows[0].id } });
         }
 
         return null;
@@ -75,6 +77,46 @@ export async function completeJob(companyId: string, success: boolean, errorMess
             status: success ? 'COMPLETED' : 'FAILED',
         }
     });
+}
+
+/**
+ * Recover stale locks on both ScrapeTask and Company records.
+ * Any record stuck in PROCESSING with lockedAt older than `timeoutMinutes` is reset to PENDING.
+ * Should be called once at worker/poller startup to clear orphaned locks from crashed processes.
+ */
+export async function recoverStaleLocks(timeoutMinutes = 10): Promise<{ tasks: number; companies: number }> {
+    const cutoff = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+
+    const [taskResult, companyResult] = await Promise.all([
+        prisma.scrapeTask.updateMany({
+            where: {
+                status: 'PROCESSING',
+                lockedAt: { lt: cutoff }
+            },
+            data: {
+                status: 'PENDING',
+                workerId: null,
+                lockedAt: null
+            }
+        }),
+        prisma.company.updateMany({
+            where: {
+                status: 'PROCESSING',
+                lockedAt: { lt: cutoff }
+            },
+            data: {
+                status: 'PENDING',
+                workerId: null,
+                lockedAt: null
+            }
+        })
+    ]);
+
+    if (taskResult.count > 0 || companyResult.count > 0) {
+        console.log(`🔓 Recovered stale locks: ${taskResult.count} tasks, ${companyResult.count} companies reset to PENDING`);
+    }
+
+    return { tasks: taskResult.count, companies: companyResult.count };
 }
 
 /**

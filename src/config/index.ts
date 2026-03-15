@@ -18,7 +18,7 @@ function loadConfig(): Config {
     return {
         DATABASE_URL,
         MAX_RESULTS: parseInt(process.env.MAX_RESULTS || '20', 10),
-        SCROLL_DELAY_MS: parseInt(process.env.SCROLL_DELAY_MS || '1200', 10),
+        SCROLL_DELAY_MS: parseInt(process.env.SCROLL_DELAY_MS || '3000', 10),
         HEADLESS: process.env.HEADLESS === 'true',
         LOG_FILE: process.env.LOG_FILE || 'scraper.log'
     };

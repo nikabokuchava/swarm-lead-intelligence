@@ -218,6 +218,13 @@ export class HybridParser {
     // 5. Reject known garbage/URL fragment patterns
     if (/follofollo|javascript:|void\(|undefined/i.test(email)) return false;
 
+    // 6. Reject local parts containing embedded domain names (e.g., "gmail.cominfo@...")
+    const localPart = email.split('@')[0];
+    if (/\.(com|net|org|edu|gov|io|co)\w/i.test(localPart)) return false;
+
+    // 7. Reject local parts that look like phone numbers (e.g., "297-4254florida@...")
+    if (/^\d[\d-]{5,}\w/i.test(localPart)) return false;
+
     return true;
   }
 
@@ -278,12 +285,13 @@ export class HybridParser {
         return {
             emails: object.emails.map(e => ({
                 ...e,
+                confidence: Math.min(100, Math.max(0, e.confidence)),
                 source: 'LLM' as const
             })),
             keyPeople: object.keyPeople,
         };
      } catch (error) {
-         console.warn("LLM extraction failed:", error);
+         console.error("❌ LLM extraction FAILED (C-Level inference will not trigger):", error instanceof Error ? error.message : error);
          return { emails: [], keyPeople: [] };
      }
   }

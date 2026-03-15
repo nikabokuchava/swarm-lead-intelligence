@@ -1,9 +1,11 @@
 import 'dotenv/config';
-import { getNextPendingLead, completeJob, failJobOrRetry } from './db/queue.js';
+import { getNextPendingLead, completeJob, failJobOrRetry, recoverStaleLocks } from './db/queue.js';
 import { updateCompanyEmails, connectDB, disconnectDB } from './db/company.js';
 import { StealthBrowser } from './scraper/stealthBrowser.js';
 import { scrapeEmailsFromWebsite } from './scraper/websiteScraper.js';
 import { verifyEmail } from './services/emailVerifier.js';
+import { generateEmailPatterns } from './utils/emailGuesser.js';
+import { prisma } from './db/company.js';
 import * as crypto from 'crypto';
 import { createAppLogger } from './utils/logger.js';
 
@@ -27,6 +29,10 @@ async function runWorker() {
     try {
         await connectDB();
         logger.info('🔌 Connected to Database');
+
+        // Recover any stale locks from crashed processes before starting
+        await recoverStaleLocks();
+
 
         // Mutable browser — supports rotation and crash recovery
         let browser = await createBrowser();
@@ -93,8 +99,18 @@ async function runWorker() {
                         continue;
                     }
 
+                    // Resolve isPremium from parent ScrapeJob
+                    let isPremium = false;
+                    if (job.jobId) {
+                        const parentJob = await prisma.scrapeJob.findUnique({
+                            where: { id: job.jobId },
+                            select: { isPremium: true }
+                        });
+                        isPremium = parentJob?.isPremium ?? false;
+                    }
+
                     // 2. Execute Deep Crawl
-                    const result = await scrapeEmailsFromWebsite(browser, job.website);
+                    const result = await scrapeEmailsFromWebsite(browser, job.website, 3, isPremium);
 
                     if (result.error) {
                         logger.warn(`❌ Scrape error for ${job.website}: ${result.error}`);
@@ -117,6 +133,8 @@ async function runWorker() {
                             verificationStatus: string;
                             mxProvider: string | undefined;
                             isCLevel: boolean;
+                            fullName?: string;
+                            title?: string;
                         }[] = [];
 
                         for (const d of (result.details || [])) {
@@ -131,6 +149,56 @@ async function runWorker() {
                                 isCLevel: false
                             });
                             await new Promise(r => setTimeout(r, 500));
+                        }
+
+                        // C-Level Inference: generate + verify email patterns for extracted people
+                        if (isPremium && (!result.extractedPeople || result.extractedPeople.length === 0)) {
+                            logger.warn(`⚠️ C-Level inference SKIPPED for ${job.name}: isPremium=true but extractedPeople is empty (LLM may have failed)`);
+                        }
+                        if (isPremium && result.extractedPeople && result.extractedPeople.length > 0) {
+                            let domain: string | null = null;
+                            try {
+                                let normalizedUrl = job.website!;
+                                if (!normalizedUrl.startsWith('http')) normalizedUrl = 'https://' + normalizedUrl;
+                                domain = new URL(normalizedUrl).hostname.replace(/^www\./, '');
+                            } catch { /* invalid URL, skip inference */ }
+
+                            if (domain) {
+                                for (const person of result.extractedPeople) {
+                                    const patterns = generateEmailPatterns(person.name, domain);
+                                    if (patterns.length === 0) continue;
+
+                                    logger.info(`🔍 C-Level inference for ${person.name} (${person.role}): ${patterns.length} patterns`);
+
+                                    let found = false;
+                                    for (const candidateEmail of patterns) {
+                                        const verification = await verifyEmail(candidateEmail);
+                                        if (verification.status === 'VALID') {
+                                            verifiedDetails.push({
+                                                email: candidateEmail,
+                                                confidence: 99,
+                                                source: 'INFERENCE',
+                                                type: 'personal',
+                                                verificationStatus: verification.status,
+                                                mxProvider: verification.mxProvider,
+                                                isCLevel: true,
+                                                fullName: person.name,
+                                                title: person.role,
+                                            });
+                                            if (!result.allEmails.includes(candidateEmail)) {
+                                                result.allEmails.push(candidateEmail);
+                                            }
+                                            logger.info(`✅ C-Level VALID: ${candidateEmail} for ${person.name}`);
+                                            found = true;
+                                            break;
+                                        }
+                                        await new Promise(r => setTimeout(r, 1500));
+                                    }
+                                    if (!found) {
+                                        logger.info(`❌ No valid pattern found for ${person.name}`);
+                                    }
+                                }
+                            }
                         }
 
                         await updateCompanyEmails(job.id, result.allEmails, verifiedDetails, job.jobId ?? undefined);
