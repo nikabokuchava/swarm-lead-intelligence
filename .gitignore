@@ -18,6 +18,15 @@ yarn-error.log*
 *.log
 *.csv
 *.png
+*.txt
+!README.txt
+
+# Root-level dev/test scripts (not part of src/)
+/test-*.ts
+/test_*.ts
+/verify_*.ts
+/init_db.ts
+/reset-stalled.ts
 
 # Internal audit (not for public)
 docs/HEALTH_AUDIT.md
