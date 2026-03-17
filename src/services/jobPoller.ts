@@ -1,4 +1,5 @@
 import { prisma } from '../db/company.js';
+import { recoverStaleLocks } from '../db/queue.js';
 import { processJob } from './scraperService.js';
 import { config } from '../config/index.js';
 
@@ -12,6 +13,9 @@ const FAILURE_COOLDOWN_MS = 30_000; // 30s cooldown after repeated failures
  */
 export async function startPolling() {
     console.log('📡 Job Poller Started. Waiting for jobs...');
+
+    // Recover any stale locks from crashed processes before polling
+    await recoverStaleLocks();
 
     let consecutiveFailures = 0;
     let isShuttingDown = false;

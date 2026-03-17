@@ -125,23 +125,39 @@ export class StealthBrowser {
     }
   }
 
-  async simulateHuman(page: Page, fastMode: boolean = false) {
+  /**
+   * Simulate human behavior with variable delay profiles based on risk level.
+   * - high: Google Maps pages (1-3s) — highest bot-detection risk
+   * - medium: Business detail pages (0.5-1.5s)
+   * - low: External website email crawling (0.3-1.0s)
+   */
+  async simulateHuman(page: Page, riskLevel: 'high' | 'medium' | 'low' = 'high') {
       // Random mouse movement
       await page.mouse.move(
-          Math.random() * 1000, 
+          Math.random() * 1000,
           Math.random() * 1000
       );
-      
+
       // Random scroll
       await page.evaluate(() => {
           window.scrollBy(0, window.innerHeight / 2);
       });
-      
-      // Random delay (1-3 seconds normal, 0.3-1s fast)
-      const delay = fastMode 
-          ? Math.floor(Math.random() * 700) + 300 
-          : Math.floor(Math.random() * 2000) + 1000;
-          
+
+      // Variable delay based on risk level
+      let delay: number;
+      switch (riskLevel) {
+          case 'low':
+              delay = Math.floor(Math.random() * 700) + 300;   // 300-1000ms
+              break;
+          case 'medium':
+              delay = Math.floor(Math.random() * 1000) + 500;  // 500-1500ms
+              break;
+          case 'high':
+          default:
+              delay = Math.floor(Math.random() * 2000) + 1000; // 1000-3000ms
+              break;
+      }
+
       await new Promise(r => setTimeout(r, delay));
   }
 }

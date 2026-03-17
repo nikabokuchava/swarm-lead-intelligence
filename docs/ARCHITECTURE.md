@@ -2,11 +2,11 @@
 
 ## The "Bridge" Pattern
 
-Swarm Lead Scraper uses a decoupled "Bridge" architecture to separate the User Interface (Next.js) from the Scraping Engine (Node.js).
+Swarm uses a decoupled "Bridge" architecture to separate the User Interface (Next.js) from the Data Collection Engine (Node.js).
 
 ### Why this pattern?
 
-Web scraping is resource-intensive and long-running. Keeping it separate from the Next.js server prevents request timeouts and allows the scraper to scale independently.
+Data collection is resource-intensive and long-running. Keeping it separate from the Next.js server prevents request timeouts and allows the worker to scale independently.
 
 ### How it works:
 
@@ -26,7 +26,7 @@ We use PostgreSQL with Prisma ORM.
 
 #### `ScrapeJob`
 
-Represents a user's request to scrape data.
+Represents a user's request to collect data.
 
 - **id:** UUID
 - **userId:** Clerk User ID (Multi-tenancy isolation)
@@ -52,9 +52,9 @@ People associated with the company (if extracted).
 
 ---
 
-## 🕷️ Scraping Logic
+## 🕷️ Data Collection Logic
 
-The scraper (`src/scraper/`) employs a Hybrid Strategy for maximum reliability.
+The collector (`src/scraper/`) employs a Hybrid Strategy for maximum reliability.
 
 ### 1. Stealth Browser
 
@@ -63,7 +63,7 @@ Uses `puppeteer-extra-plugin-stealth` to evade bot detection. It mimics real use
 ### 2. Extraction Pipeline
 
 - **Google Maps:** Extracts basic info (Name, Address, Website).
-- **Website Visit:** If a website exists, the scraper visits it to find emails.
+- **Website Visit:** If a website exists, the collector visits it to find emails.
 - **Hybrid Parser:**
   1.  **HTML/Regex:** Scans for `mailto:` links and email patterns.
   2.  **LLM Fallback:** (Optional) If regex fails, uses an LLM to infer contact info from "About Us" or "Contact" pages.

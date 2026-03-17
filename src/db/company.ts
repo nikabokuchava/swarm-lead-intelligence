@@ -83,7 +83,7 @@ export async function getAllCompanies() {
 }
 
 /**
- * Get companies that haven't been email scraped yet
+ * Get companies that haven't been email-processed yet
  */
 export async function getCompaniesWithoutEmails(limit = 50) {
     return prisma.company.findMany({
@@ -102,14 +102,16 @@ export async function getCompaniesWithoutEmails(limit = 50) {
 export async function updateCompanyEmails(
     companyId: string, 
     emails: string[], 
-    details: { 
-        email: string; 
-        confidence: number; 
-        source: string; 
+    details: {
+        email: string;
+        confidence: number;
+        source: string;
         type?: string;
         verificationStatus?: string;
         mxProvider?: string;
         isCLevel?: boolean;
+        fullName?: string;
+        title?: string;
     }[] = [],
     jobId?: string
 ) {
@@ -143,7 +145,8 @@ export async function updateCompanyEmails(
              verificationStatus: d.verificationStatus || 'UNKNOWN',
              mxProvider: d.mxProvider,
              jobId: jobId,
-             fullName: 'Unknown',
+             fullName: d.fullName || 'Unknown',
+             title: d.title || null,
              isCLevel: d.isCLevel ?? false
         }));
 

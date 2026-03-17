@@ -1,38 +1,68 @@
-# 🐝 Swarm Lead Scraper
+# Swarm | B2B Lead Intelligence Engine
 
-> **Automated B2B Lead Generation Engine**
+Automated B2B lead intelligence platform that surfaces local business data, crawls websites for contact information, verifies emails via MX lookup, and assigns AI confidence scores. Processes 500+ companies per hour.
 
-Swarm Lead Scraper is a robust, production-ready B2B lead generation tool. It combines a Next.js Dashboard for management with a stealthy Node.js/Puppeteer worker for data extraction.
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=flat-square&logo=next.js&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=node.js&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat-square&logo=prisma&logoColor=white)
+![Puppeteer](https://img.shields.io/badge/Puppeteer-40B5A4?style=flat-square&logo=puppeteer&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=flat-square&logo=openai&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Stripe](https://img.shields.io/badge/Stripe-008CDD?style=flat-square&logo=stripe&logoColor=white)
 
-## 🏗️ Architecture
+---
+
+## What It Does
+
+- **Surfaces business data** from Google Maps by niche and location
+- **Crawls business websites** using stealth browser automation
+- **Extracts and MX-verifies** email contacts
+- **Assigns AI-powered confidence scores** via hybrid parsing (regex + LLM fallback)
+- **Multi-tenant dashboard** with Clerk auth and Stripe monetization
+
+---
+
+## Architecture
+
+Swarm uses a decoupled **"Bridge" pattern** — the Dashboard and Worker communicate exclusively via a PostgreSQL job queue. This keeps the UI responsive while the data collection engine runs independently.
 
 ```mermaid
 graph LR
     User[User] -->|Manage| Dashboard[Next.js Dashboard]
     Dashboard -->|Read/Write| DB[(PostgreSQL)]
-    Worker[Node.js Worker] -->|Poll Jobs| DB
-    Worker -->|Scrape| Puppeteer[Puppeteer Stealth]
-    Puppeteer -->|Extract| GMaps[Google Maps]
-    Puppeteer -->|Save Leads| DB
+    Worker[Node.js Worker] -->|Process Queue| DB
+    Worker -->|Extract| Stealth[Stealth Browser]
+    Stealth -->|Collect| GMaps[Google Maps]
+    Stealth -->|Store Leads| DB
 ```
 
-## 🛠️ Tech Stack
+---
 
-- **Frontend:** Next.js 16 (App Router), Tailwind CSS v4, Lucide React
-- **Auth:** Clerk (Multi-tenancy)
-- **Backend:** Node.js, Puppeteer (Stealth Plugin), Server Actions
-- **Database:** PostgreSQL, Prisma ORM
-- **Infrastructure:** Docker (for DB)
+## Tech Stack
 
-## 🚀 Quick Start
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | Next.js 16 (App Router), Tailwind CSS v4, Lucide React |
+| **Auth** | Clerk (multi-tenancy) |
+| **Backend** | Node.js, Puppeteer (Stealth Plugin), Server Actions |
+| **Database** | PostgreSQL, Prisma ORM |
+| **AI** | OpenAI GPT-4o-mini (hybrid email parsing) |
+| **Payments** | Stripe (credits-based billing) |
+| **Infrastructure** | Docker, PM2 |
 
-### 1. Prerequisites
+---
+
+## Quick Start
+
+### Prerequisites
 
 - **Node.js** (v18+)
 - **Docker Desktop** (must be running)
 - **Clerk Account** (for authentication)
 
-### 2. Setup
+### Setup
 
 **1. Start Database**
 
@@ -60,9 +90,9 @@ npm install --prefix dashboard # Dashboard dependencies
 npx prisma migrate dev
 ```
 
-### 3. Run Application
+### Run
 
-**Start the Worker (Scraper Engine):**
+**Start the Worker (Data Collection Engine):**
 
 ```bash
 npm start
@@ -76,20 +106,56 @@ npm run dev --prefix dashboard
 
 Visit `http://localhost:3000` to access the dashboard.
 
-## 📦 Project Structure
+---
+
+## Project Structure
 
 ```
-├── dashboard/        # Next.js Frontend
-│   ├── src/app/      # App Router
-│   └── src/actions/  # Server Actions
-├── src/              # Scraper Worker
-│   ├── scraper/      # Puppeteer Logic
-│   └── services/     # Job Poller
-├── prisma/           # Database Schema
-└── docs/             # Documentation
+├── dashboard/          # Next.js Frontend (App Router)
+│   ├── src/app/        # Routes & Server Actions
+│   └── src/components/ # UI Components
+├── src/                # Data Collection Worker
+│   ├── scraper/        # Data Collection Engine (Puppeteer)
+│   ├── services/       # Job Poller & Orchestration
+│   ├── db/             # Prisma Database Operations
+│   ├── utils/          # Hybrid Parser, Email Guesser, Logger
+│   └── scripts/        # CLI Utilities & Diagnostics
+├── prisma/             # Database Schema & Migrations
+├── docs/               # Architecture & Reference Docs
+└── docker-compose.yml  # Local Dev Stack
 ```
 
-## 📄 Documentation
+---
+
+## Deployment
+
+### Dashboard → Vercel
+
+1. Import the repository into Vercel, set **Root Directory** to `dashboard`.
+2. Configure environment variables (Clerk, Stripe, `DATABASE_URL`).
+3. Deploy — Vercel runs `next build` automatically.
+
+### Worker → VPS (Docker)
+
+1. Copy project files to your server.
+2. Create a `.env` file with production credentials.
+3. Build and start:
+
+```bash
+docker-compose up --build -d
+```
+
+> Use a managed Postgres provider (Neon, Supabase, Railway). Run `npx prisma migrate deploy` after provisioning.
+
+---
+
+## Screenshots
+
+> Screenshots coming soon. See [demo video](#) for a walkthrough.
+
+---
+
+## Documentation
 
 - [Architecture Guide](docs/ARCHITECTURE.md)
 - [Environment Variables](docs/ENVIRONMENT.md)
@@ -97,77 +163,10 @@ Visit `http://localhost:3000` to access the dashboard.
 
 ---
 
-## 🚢 Deployment Guide
+## License
 
-Swarm has two independently deployable components. Deploy them separately.
-
-### 1. Next.js Dashboard → Vercel
-
-The dashboard is a standard Next.js 16 (App Router) application. Deploy it directly from your repository.
-
-**Steps:**
-
-1. Push the `dashboard/` directory to GitHub.
-2. Import the repository into [Vercel](https://vercel.com) and set the **Root Directory** to `dashboard`.
-3. Set the following **Environment Variables** in the Vercel project settings:
-
-| Variable                            | Description                                                 |
-| ----------------------------------- | ----------------------------------------------------------- |
-| `DATABASE_URL`                      | PostgreSQL connection string (e.g. Neon, Supabase, Railway) |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk public key                                            |
-| `CLERK_SECRET_KEY`                  | Clerk secret key                                            |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL`     | `/sign-in`                                                  |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_URL`     | `/sign-up`                                                  |
-| `STRIPE_SECRET_KEY`                 | Stripe live secret key                                      |
-| `STRIPE_WEBHOOK_SECRET`             | From `stripe listen --forward-to`                           |
-| `NEXT_PUBLIC_APP_URL`               | Your Vercel deployment URL                                  |
-
-4. Deploy. Vercel will run `next build` automatically.
-
-> **Database:** Use a managed Postgres provider (Neon, Supabase, or Railway). Run `npx prisma migrate deploy` once after provisioning.
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-### 2. Background Worker → VPS (Docker)
-
-The scraper worker is a long-running Node.js process. Deploy it on any server that supports Docker (DigitalOcean Droplet, AWS EC2, Railway, Render).
-
-#### Local Production Stack
-
-Start a local production-like environment (Postgres + Worker):
-
-```bash
-npm run docker:up     # Build image and start all services
-npm run docker:down   # Stop and remove containers
-```
-
-This uses `docker-compose.yml` which:
-
-- Starts **PostgreSQL 15** with a persistent volume
-- Waits for the DB health check (`pg_isready`) before starting the worker
-- Runs `prisma migrate deploy` then starts the worker in `--serve` mode
-
-#### VPS Deployment
-
-1. Copy `Dockerfile.worker`, `docker-compose.yml`, `prisma/`, `src/`, `package.json`, and `tsconfig.json` to your server.
-2. Create a `.env` file on the server (never commit this):
-
-```env
-DATABASE_URL=postgresql://swarm:swarm_secret@postgres:5432/swarm_leads
-HEADLESS=true
-LOG_FILE=/app/logs/worker.log
-```
-
-3. Build and start:
-
-```bash
-docker-compose up --build -d
-```
-
-4. Verify the worker is running:
-
-```bash
-docker logs swarm_worker --follow
-```
-
-> **Scaling:** To run multiple workers, increase `replicas` in `docker-compose.yml` (requires Swarm mode or Kubernetes). Each worker polls the same job queue from the shared database.
+Built by **Nick Bokuchava** — [LinkedIn](https://linkedin.com/in/nika-bokuchava-7856b03b5) · [GitHub](https://github.com/mindmnml-del)

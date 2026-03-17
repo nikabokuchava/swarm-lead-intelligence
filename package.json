@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "start": "node dist/index.js",
+    "ensure-build": "tsx src/scripts/ensure-build.ts",
     "worker": "tsx src/worker.ts",
+    "worker:prod": "tsx src/scripts/ensure-build.ts && node dist/worker.js",
     "verify:all": "tsx src/scripts/verify-leads.ts",
     "docker:up": "docker-compose up --build -d",
     "docker:down": "docker-compose down",
@@ -20,7 +22,8 @@
     "export:medspa": "tsx src/scripts/export-medspa.ts",
     "seed:buyers": "tsx src/scripts/seed-agency-buyers.ts",
     "export:buyers": "tsx src/scripts/export-agency-buyers.ts",
-    "reset-tasks": "tsx src/scripts/reset_tasks.ts"
+    "reset-tasks": "tsx src/scripts/reset_tasks.ts",
+    "scrape:test": "tsx src/scripts/trigger-test-scrape.ts"
   },
   "keywords": [],
   "author": "",

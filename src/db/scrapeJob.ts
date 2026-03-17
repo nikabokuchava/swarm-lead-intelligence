@@ -13,7 +13,7 @@ interface UpdateJobParams {
 }
 
 /**
- * Create a new scrape job
+ * Create a new data collection job
  */
 export async function createScrapeJob(params: CreateJobParams) {
     return prisma.scrapeJob.create({
@@ -27,7 +27,7 @@ export async function createScrapeJob(params: CreateJobParams) {
 }
 
 /**
- * Update an existing scrape job
+ * Update an existing data collection job
  */
 export async function updateScrapeJob(jobId: string, params: UpdateJobParams) {
     return prisma.scrapeJob.update({
@@ -42,7 +42,7 @@ export async function updateScrapeJob(jobId: string, params: UpdateJobParams) {
 }
 
 /**
- * Get a scrape job by ID
+ * Get a data collection job by ID
  */
 export async function getScrapeJob(jobId: string) {
     return prisma.scrapeJob.findUnique({
@@ -51,7 +51,7 @@ export async function getScrapeJob(jobId: string) {
 }
 
 /**
- * Get all scrape jobs ordered by creation date
+ * Get all data collection jobs ordered by creation date
  */
 export async function listScrapeJobs(limit = 10) {
     return prisma.scrapeJob.findMany({

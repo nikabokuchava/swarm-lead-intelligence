@@ -44,6 +44,7 @@ model Company {
   @@map("companies")
   @@index([status, createdAt])
   @@index([userId])
+  @@index([jobId])
 }
 
 model Contact {

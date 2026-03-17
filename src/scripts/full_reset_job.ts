@@ -33,7 +33,7 @@ async function fullResetJob() {
         }
     });
 
-    // 3. Reset scrape tasks
+    // 3. Reset data collection tasks
     const tasks = await prisma.scrapeTask.updateMany({
         where: { jobId },
         data: {

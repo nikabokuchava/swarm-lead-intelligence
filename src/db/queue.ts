@@ -68,7 +68,7 @@ export async function resetStalledJobs(timeoutMinutes = 10): Promise<number> {
 /**
  * Mark a job as completed.
  * @param companyId - ID of the company
- * @param success - Whether the scrape was successful
+ * @param success - Whether the data extraction was successful
  */
 export async function completeJob(companyId: string, success: boolean, errorMessage?: string) {
     await prisma.company.update({

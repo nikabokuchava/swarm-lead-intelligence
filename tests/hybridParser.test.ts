@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { HybridParser } from '../src/utils/hybridParser';
+import { generateObject } from 'ai';
+
+vi.mock('ai', () => ({
+    generateObject: vi.fn(),
+}));
 
 describe('HybridParser', () => {
     const parser = new HybridParser();
@@ -202,5 +207,34 @@ describe('HybridParser', () => {
         const result = await parser.extract(html);
 
         expect(result.emails.some(r => r.email === 'first.last@company.co.uk')).toBe(true);
+    });
+
+    // --- LLM Confidence Clamping ---
+
+    it('should clamp LLM confidence scores > 100 to 100 and < 0 to 0', async () => {
+        const { generateObject } = await import('ai');
+        const mockGenerateObject = generateObject as any;
+        mockGenerateObject.mockResolvedValue({
+            object: {
+                emails: [
+                    { email: 'high@test.com', confidence: 999, source: 'LLM', type: 'personal' },
+                    { email: 'low@test.com', confidence: -50, source: 'LLM', type: 'personal' }
+                ],
+                keyPeople: []
+            }
+        });
+
+        process.env.OPENAI_API_KEY = 'test-key';
+        const html = '<p>Nothing interesting here, leaving it to LLM</p>';
+        const result = await parser.extract(html, true);
+
+        const highEmail = result.emails.find(r => r.email === 'high@test.com');
+        const lowEmail = result.emails.find(r => r.email === 'low@test.com');
+
+        expect(highEmail).toBeDefined();
+        expect(highEmail?.confidence).toBe(100);
+
+        expect(lowEmail).toBeDefined();
+        expect(lowEmail?.confidence).toBe(0);
     });
 });

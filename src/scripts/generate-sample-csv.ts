@@ -7,12 +7,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '../../');
-const samplesDir = path.join(rootDir, 'samples');
 
 const prisma = new PrismaClient();
 
-function escapeCSV(value: string): string {
-  if (value === null || value === undefined) return '';
+function escapeCSV(value: string | null | undefined): string {
+  if (value == null) return '';
   const str = String(value);
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {
     return `"${str.replace(/"/g, '""')}"`;
@@ -21,68 +20,65 @@ function escapeCSV(value: string): string {
 }
 
 async function main() {
-  console.log('Fetching verified premium leads...');
-  
-  if (!fs.existsSync(samplesDir)) {
-    fs.mkdirSync(samplesDir, { recursive: true });
-  }
+  console.log('Fetching top 50 premium C-Level leads...');
 
-  const companies = await prisma.company.findMany({
+  const contacts = await prisma.contact.findMany({
     where: {
-      emails: { isEmpty: false },
-      contacts: {
-        some: {
-          verificationStatus: 'VALID',
-          confidenceScore: { gte: 80 },
-        },
-      },
+      verificationStatus: 'VALID',
+      isCLevel: true,
     },
+    orderBy: {
+      confidenceScore: 'desc',
+    },
+    take: 50,
     include: {
-      contacts: {
-        where: {
-          verificationStatus: 'VALID',
-          confidenceScore: { gte: 80 },
-        },
-        orderBy: {
-          confidenceScore: 'desc',
-        },
-      },
+      company: true,
     },
   });
 
-  if (companies.length === 0) {
-    console.log('No premium leads found matching the criteria.');
+  if (contacts.length === 0) {
+    console.log('No premium C-Level leads found matching criteria (VALID + isCLevel).');
     return;
   }
 
-  const headers = ['Company Name', 'Phone', 'Website', 'Address', 'Email', 'AI Confidence', 'MX Provider'];
+  console.log(`Found ${contacts.length} premium C-Level leads.`);
+
+  const headers = [
+    'Company Name',
+    'Website',
+    'Contact Name',
+    'Email',
+    'Job Title',
+    'AI Confidence Score',
+    'MX Provider',
+    'Verification Status',
+  ];
+
   const csvRows = [headers.join(',')];
 
-  companies.forEach(company => {
-    // Take the best contact based on confidence score
-    const bestContact = company.contacts[0];
-    
+  for (const c of contacts) {
     const row = [
-      escapeCSV(company.name),
-      escapeCSV(company.phone || ''),
-      escapeCSV(company.website || ''),
-      escapeCSV(company.address || ''),
-      escapeCSV(bestContact?.workEmail || company.emails[0] || ''),
-      escapeCSV(bestContact?.confidenceScore?.toString() || ''),
-      escapeCSV(bestContact?.mxProvider || '')
+      escapeCSV(c.company.name),
+      escapeCSV(c.company.website),
+      escapeCSV(c.fullName),
+      escapeCSV(c.workEmail),
+      escapeCSV(c.title),
+      escapeCSV(c.confidenceScore?.toString()),
+      escapeCSV(c.mxProvider),
+      escapeCSV(c.verificationStatus),
     ];
     csvRows.push(row.join(','));
-  });
+  }
 
-  const csvPath = path.join(samplesDir, 'sample-leads.csv');
+  const csvPath = path.join(rootDir, 'premium-50-sample.csv');
   fs.writeFileSync(csvPath, csvRows.join('\n') + '\n', 'utf8');
-  
-  console.log(`Successfully exported ${companies.length} premium leads to ${csvPath}`);
+
+  console.log(`Wrote ${contacts.length} rows to ${csvPath}`);
 }
 
 main()
-  .catch(e => {
-    console.error('Error generating sample CSV:', e);
+  .catch((err) => {
+    console.error('Fatal:', err);
     process.exit(1);
   })
   .finally(async () => {

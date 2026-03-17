@@ -44,7 +44,7 @@ async function main() {
 
         logger.info(`🚀 Launching CLI Job: "${searchQuery}"`);
 
-        // Create Job immediately
+        // Create Job + Task for CLI mode
         const job = await prisma.scrapeJob.create({
             data: {
                 query: searchQuery,
@@ -53,8 +53,16 @@ async function main() {
             }
         });
 
-        // Process immediately (blocking)
-        await processJob(job.id, headlessMode);
+        const task = await prisma.scrapeTask.create({
+            data: {
+                jobId: job.id,
+                query: searchQuery,
+                status: 'PENDING'
+            }
+        });
+
+        // Process immediately (blocking) — processJob expects a taskId
+        await processJob(task.id, headlessMode);
 
     } catch (error) {
         logger.error('❌ Fatal Error:', error);

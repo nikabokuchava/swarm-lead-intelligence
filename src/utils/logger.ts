@@ -3,7 +3,7 @@ import { config } from '../config/index.js';
 
 /**
  * Creates a Winston logger instance with console + file transports.
- * @param logFile - Override filename (defaults to config.LOG_FILE → 'scraper.log')
+ * @param logFile - Override filename (defaults to config.LOG_FILE → 'worker.log')
  */
 export function createAppLogger(logFile?: string): winston.Logger {
     const filename = logFile ?? config.LOG_FILE;

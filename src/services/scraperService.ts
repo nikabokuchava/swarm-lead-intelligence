@@ -11,7 +11,7 @@ const logger = createAppLogger();
 
 export async function processJob(taskId: string, headlessMode: boolean = true) {
     let scraper: GoogleMapsScraper | null = null;
-    // ARC-02: Single shared StealthBrowser for both maps scraping + email crawl
+    // ARC-02: Single shared StealthBrowser for both maps data collection + email crawl
     let sharedBrowser: StealthBrowser | null = null;
     
     try {
@@ -43,7 +43,7 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
         logger.info('🌐 Shared StealthBrowser initialized for job.');
 
         scraper = new GoogleMapsScraper();
-        // Pass sharedBrowser so maps scraper reuses the same Chromium process
+        // Pass sharedBrowser so maps collector reuses the same Chromium process
         await scraper.init(headlessMode, sharedBrowser);
         
         await scraper.search(fullQuery);
@@ -148,7 +148,7 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
         }
         return { success: false, error };
     } finally {
-        // ARC-02: scraper only closes its page, sharedBrowser owns the process
+        // ARC-02: collector only closes its page, sharedBrowser owns the process
         if (scraper) await scraper.close();
         if (sharedBrowser) await sharedBrowser.close();
     }

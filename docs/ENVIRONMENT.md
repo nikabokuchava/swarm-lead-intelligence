@@ -2,7 +2,7 @@
 
 This project uses two separate environment files: one for the Root (Worker) and one for the Dashboard (Next.js).
 
-## 1. Root `.env` (Scraper Worker)
+## 1. Root `.env` (Data Collection Worker)
 
 Location: `swarm-lead-scraper/.env`
 

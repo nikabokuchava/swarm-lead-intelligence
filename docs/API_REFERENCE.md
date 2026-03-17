@@ -8,7 +8,7 @@ Location: `dashboard/src/actions/`
 
 ### `createScrapeJob`
 
-Initiates a new scraping task.
+Initiates a new data collection task.
 
 - **Input:**
   ```typescript

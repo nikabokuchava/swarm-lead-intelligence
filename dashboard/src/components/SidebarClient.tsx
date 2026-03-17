@@ -63,7 +63,7 @@ export function SidebarClient({ recentJobs }: SidebarClientProps) {
         })}
       </nav>
 
-      {/* Scrape History */}
+      {/* Collection History */}
       <div className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar">
         <div className="mb-2 flex items-center px-2 text-xs font-mono font-semibold text-zinc-500 uppercase tracking-wider">
           <History className="mr-2 h-3 w-3" />

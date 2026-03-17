@@ -23,7 +23,7 @@ async function main(): Promise<void> {
     const browser = new StealthBrowser();
 
     try {
-        // ── Step 1: Launch browser & scrape website ──────────────────────
+        // ── Step 1: Launch browser & extract website data ────────────────
         console.log(`\n=== CEO Extraction Pipeline ===`);
         console.log(`Target : ${TARGET_URL}`);
         console.log(`Max pages : ${MAX_PAGES}`);

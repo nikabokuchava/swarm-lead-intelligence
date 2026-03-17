@@ -1,5 +1,5 @@
 /**
- * Website Scraper - Agentic Implementation
+ * Website Data Collector - Agentic Implementation
  * Uses Stealth Browser and Hybrid Parsing to extracting emails
  */
 
@@ -32,7 +32,7 @@ const CONTACT_PAGES = [
 ];
 
 /**
- * Scrape emails from a company website using Stealth Agent
+ * Extract emails from a company website using Stealth Agent
  */
 // Helper to extract relevant internal links
 async function findInternalContactLinks(page: Page, baseUrl: string): Promise<string[]> {
@@ -74,7 +74,7 @@ async function findInternalContactLinks(page: Page, baseUrl: string): Promise<st
 }
 
 /**
- * Scrape emails from a company website using Stealth Agent & Deep Crawl
+ * Extract emails from a company website using Stealth Agent & Deep Crawl
  */
 export async function scrapeEmailsFromWebsite(
     providedBrowser: StealthBrowser | null,
@@ -139,8 +139,8 @@ export async function scrapeEmailsFromWebsite(
                     timeout: 15000 
                 });
 
-                // Simulate human reading with fastMode=true since it's a low-risk external site
-                await browser.simulateHuman(page, true);
+                // Low-risk external site: use shortest delay profile
+                await browser.simulateHuman(page, 'low');
 
                 // Get page content
                 const html = await page.content();
