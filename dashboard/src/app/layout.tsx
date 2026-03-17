@@ -14,7 +14,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Swarm Lead Scraper",
+  title: "Swarm | B2B Lead Intelligence Engine",
   description: "Advanced lead generation dashboard",
 };
 
