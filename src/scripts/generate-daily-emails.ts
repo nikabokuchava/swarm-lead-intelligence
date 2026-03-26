@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,7 +12,7 @@ const rootDir = path.resolve(__dirname, '../../');
 const samplesDir = path.join(rootDir, 'samples');
 
 const prisma = new PrismaClient();
-const openai = createOpenAI({});
+const google = createGoogleGenerativeAI({});
 const LIMIT = 20;
 
 function parseDayArg(): number {
@@ -132,7 +132,7 @@ Body:
 
     try {
       const result = await generateText({
-        model: openai('gpt-4o-mini'),
+        model: google('gemini-2.5-flash'),
         system: SYSTEM_PROMPT,
         prompt: userPrompt,
         maxOutputTokens: 300,

@@ -3,11 +3,12 @@ import { getNextPendingLead, completeJob, failJobOrRetry, recoverStaleLocks } fr
 import { updateCompanyEmails, connectDB, disconnectDB } from './db/company.js';
 import { StealthBrowser } from './scraper/stealthBrowser.js';
 import { scrapeEmailsFromWebsite } from './scraper/websiteScraper.js';
-import { verifyEmail } from './services/emailVerifier.js';
+import { verifyEmail, getMxInfo } from './services/emailVerifier.js';
 import { generateEmailPatterns } from './utils/emailGuesser.js';
 import { prisma } from './db/company.js';
 import * as crypto from 'crypto';
 import { createAppLogger } from './utils/logger.js';
+import * as http from 'http';
 
 const logger = createAppLogger('worker.log');
 
@@ -33,6 +34,19 @@ async function runWorker() {
         // Recover any stale locks from crashed processes before starting
         await recoverStaleLocks();
 
+        // Lightweight health check endpoint for container orchestrators (K8s, Docker)
+        const healthPort = parseInt(process.env.WORKER_HEALTH_PORT || '8080', 10);
+        const healthServer = http.createServer((_req, res) => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                status: 'ok',
+                workerId: WORKER_ID,
+                uptime: process.uptime(),
+            }));
+        });
+        healthServer.listen(healthPort, () => {
+            logger.info(`🏥 Health check listening on port ${healthPort}`);
+        });
 
         // Mutable browser — supports rotation and crash recovery
         let browser = await createBrowser();
@@ -60,6 +74,7 @@ async function runWorker() {
             logger.info('🛑 Shutting down worker...');
             try {
                 await browser.close();
+                healthServer.close();
                 await disconnectDB();
                 logger.info('👋 Worker cleanup complete');
                 process.exit(0);
@@ -81,164 +96,186 @@ async function runWorker() {
             }
 
             try {
+                // 1. Fetch Next Job — DB errors get dedicated reconnection handling
+                let job;
                 try {
-                    // 1. Fetch Next Job
-                    const job = await getNextPendingLead(WORKER_ID);
-
-                    if (!job) {
-                        // Poll wait
-                        await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL_MS));
-                        continue;
+                    job = await getNextPendingLead(WORKER_ID);
+                } catch (dbError) {
+                    logger.error('💥 Database error fetching job. Reconnecting...', dbError);
+                    try {
+                        await disconnectDB();
+                        await connectDB();
+                        logger.info('🔌 Database reconnected successfully.');
+                    } catch (reconnectErr) {
+                        logger.error('💀 Database reconnection failed. Will retry on next loop.', reconnectErr);
                     }
+                    await new Promise(resolve => setTimeout(resolve, 30000));
+                    continue;
+                }
 
-                    logger.info(`👷 Processing: ${job.name} (ID: ${job.id}) - URL: ${job.website}`);
+                if (!job) {
+                    // Poll wait
+                    await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL_MS));
+                    continue;
+                }
 
-                    if (!job.website) {
-                        logger.warn(`⚠️  No website for ${job.name}, marking FAILED.`);
-                        await completeJob(job.id, false, 'Missing website URL');
-                        continue;
-                    }
+                logger.info(`👷 Processing: ${job.name} (ID: ${job.id}) - URL: ${job.website}`);
 
-                    // Resolve isPremium from parent ScrapeJob
-                    let isPremium = false;
-                    if (job.jobId) {
-                        const parentJob = await prisma.scrapeJob.findUnique({
-                            where: { id: job.jobId },
-                            select: { isPremium: true }
-                        });
-                        isPremium = parentJob?.isPremium ?? false;
-                    }
+                if (!job.website) {
+                    logger.warn(`⚠️  No website for ${job.name}, marking FAILED.`);
+                    await completeJob(job.id, false, 'Missing website URL');
+                    continue;
+                }
 
-                    // 2. Execute Deep Crawl
-                    const result = await scrapeEmailsFromWebsite(browser, job.website, 3, isPremium);
+                // Resolve isPremium from parent ScrapeJob
+                let isPremium = false;
+                if (job.jobId) {
+                    const parentJob = await prisma.scrapeJob.findUnique({
+                        where: { id: job.jobId },
+                        select: { isPremium: true }
+                    });
+                    isPremium = parentJob?.isPremium ?? false;
+                }
 
-                    if (result.error) {
-                        logger.warn(`❌ Scrape error for ${job.website}: ${result.error}`);
-                        await failJobOrRetry(job.id, job.retries, result.error);
+                // 2. Execute Deep Crawl
+                const result = await scrapeEmailsFromWebsite(browser, job.website, 3, isPremium);
+
+                if (result.error) {
+                    logger.warn(`❌ Scrape error for ${job.website}: ${result.error}`);
+                    await failJobOrRetry(job.id, job.retries, result.error);
+                } else {
+                    const emailCount = result.allEmails.length;
+
+                    if (emailCount > 0) {
+                        logger.info(`✅ Found ${emailCount} emails for ${job.name}: ${result.allEmails.join(', ')}`);
                     } else {
-                        const emailCount = result.allEmails.length;
+                        logger.info(`🤷 No emails found for ${job.name}`);
+                    }
 
-                        if (emailCount > 0) {
-                            logger.info(`✅ Found ${emailCount} emails for ${job.name}: ${result.allEmails.join(', ')}`);
-                        } else {
-                            logger.info(`🤷 No emails found for ${job.name}`);
-                        }
+                    // T1: Parallel email verification with MX cache pre-warming
+                    const verifiedDetails: {
+                        email: string;
+                        confidence: number;
+                        source: string;
+                        type: string;
+                        verificationStatus: string;
+                        mxProvider: string | undefined;
+                        isCLevel: boolean;
+                        fullName?: string;
+                        title?: string;
+                    }[] = [];
 
-                        // Sequential email verification — respects DNS rate limits
-                        const verifiedDetails: {
-                            email: string;
-                            confidence: number;
-                            source: string;
-                            type: string;
-                            verificationStatus: string;
-                            mxProvider: string | undefined;
-                            isCLevel: boolean;
-                            fullName?: string;
-                            title?: string;
-                        }[] = [];
+                    const details = result.details || [];
 
-                        for (const d of (result.details || [])) {
-                            const verification = await verifyEmail(d.email);
-                            verifiedDetails.push({
-                                email: d.email,
-                                confidence: d.confidence,
-                                source: d.source,
-                                type: d.type || 'generic',
-                                verificationStatus: verification.status,
-                                mxProvider: verification.mxProvider,
-                                isCLevel: false
-                            });
-                            await new Promise(r => setTimeout(r, 500));
-                        }
+                    // Pre-warm MX cache for all unique domains (single DNS lookup per domain)
+                    const uniqueDomains = [...new Set(details.map(d => d.email.split('@')[1]).filter(Boolean))];
+                    for (const domain of uniqueDomains) {
+                        try { await getMxInfo(domain); } catch { /* cache miss is fine, verifyEmail handles it */ }
+                    }
 
-                        // C-Level Inference: generate + verify email patterns for extracted people
-                        if (isPremium && (!result.extractedPeople || result.extractedPeople.length === 0)) {
-                            logger.warn(`⚠️ C-Level inference SKIPPED for ${job.name}: isPremium=true but extractedPeople is empty (LLM may have failed)`);
-                        }
-                        if (isPremium && result.extractedPeople && result.extractedPeople.length > 0) {
-                            let domain: string | null = null;
-                            try {
-                                let normalizedUrl = job.website!;
-                                if (!normalizedUrl.startsWith('http')) normalizedUrl = 'https://' + normalizedUrl;
-                                domain = new URL(normalizedUrl).hostname.replace(/^www\./, '');
-                            } catch { /* invalid URL, skip inference */ }
+                    // Process in parallel chunks of 3 with jitter
+                    const PARALLEL_CHUNK_SIZE = 3;
+                    for (let i = 0; i < details.length; i += PARALLEL_CHUNK_SIZE) {
+                        const chunk = details.slice(i, i + PARALLEL_CHUNK_SIZE);
+                        const chunkResults = await Promise.all(
+                            chunk.map(async (d) => {
+                                // Small jitter to avoid simultaneous SMTP connections
+                                await new Promise(r => setTimeout(r, Math.random() * 200));
+                                const verification = await verifyEmail(d.email);
+                                return {
+                                    email: d.email,
+                                    confidence: verification.confidence ?? d.confidence,
+                                    source: d.source,
+                                    type: d.type || 'generic',
+                                    verificationStatus: verification.status,
+                                    mxProvider: verification.mxProvider,
+                                    isCLevel: false
+                                };
+                            })
+                        );
+                        verifiedDetails.push(...chunkResults);
+                    }
 
-                            if (domain) {
-                                for (const person of result.extractedPeople) {
-                                    const patterns = generateEmailPatterns(person.name, domain);
-                                    if (patterns.length === 0) continue;
+                    // C-Level Inference: generate + verify email patterns for extracted people
+                    if (isPremium && (!result.extractedPeople || result.extractedPeople.length === 0)) {
+                        logger.warn(`⚠️ C-Level inference SKIPPED for ${job.name}: isPremium=true but extractedPeople is empty (LLM may have failed)`);
+                    }
+                    if (isPremium && result.extractedPeople && result.extractedPeople.length > 0) {
+                        let domain: string | null = null;
+                        try {
+                            let normalizedUrl = job.website!;
+                            if (!normalizedUrl.startsWith('http')) normalizedUrl = 'https://' + normalizedUrl;
+                            domain = new URL(normalizedUrl).hostname.replace(/^www\./, '');
+                        } catch { /* invalid URL, skip inference */ }
 
-                                    logger.info(`🔍 C-Level inference for ${person.name} (${person.role}): ${patterns.length} patterns`);
+                        if (domain) {
+                            for (const person of result.extractedPeople) {
+                                const patterns = generateEmailPatterns(person.name, domain);
+                                if (patterns.length === 0) continue;
 
-                                    let found = false;
-                                    for (const candidateEmail of patterns) {
-                                        const verification = await verifyEmail(candidateEmail);
-                                        if (verification.status === 'VALID') {
-                                            verifiedDetails.push({
-                                                email: candidateEmail,
-                                                confidence: 99,
-                                                source: 'INFERENCE',
-                                                type: 'personal',
-                                                verificationStatus: verification.status,
-                                                mxProvider: verification.mxProvider,
-                                                isCLevel: true,
-                                                fullName: person.name,
-                                                title: person.role,
-                                            });
-                                            if (!result.allEmails.includes(candidateEmail)) {
-                                                result.allEmails.push(candidateEmail);
-                                            }
-                                            logger.info(`✅ C-Level VALID: ${candidateEmail} for ${person.name}`);
-                                            found = true;
-                                            break;
+                                logger.info(`🔍 C-Level inference for ${person.name} (${person.role}): ${patterns.length} patterns`);
+
+                                let found = false;
+                                for (const candidateEmail of patterns) {
+                                    const verification = await verifyEmail(candidateEmail);
+                                    if (verification.status === 'VALID') {
+                                        verifiedDetails.push({
+                                            email: candidateEmail,
+                                            confidence: 99,
+                                            source: 'INFERENCE',
+                                            type: 'personal',
+                                            verificationStatus: verification.status,
+                                            mxProvider: verification.mxProvider,
+                                            isCLevel: true,
+                                            fullName: person.name,
+                                            title: person.role,
+                                        });
+                                        if (!result.allEmails.includes(candidateEmail)) {
+                                            result.allEmails.push(candidateEmail);
                                         }
-                                        await new Promise(r => setTimeout(r, 1500));
+                                        logger.info(`✅ C-Level VALID: ${candidateEmail} for ${person.name}`);
+                                        found = true;
+                                        break;
                                     }
-                                    if (!found) {
-                                        logger.info(`❌ No valid pattern found for ${person.name}`);
-                                    }
+                                    await new Promise(r => setTimeout(r, 1500));
+                                }
+                                if (!found) {
+                                    logger.info(`❌ No valid pattern found for ${person.name}`);
                                 }
                             }
                         }
-
-                        await updateCompanyEmails(job.id, result.allEmails, verifiedDetails, job.jobId ?? undefined);
-                        await completeJob(job.id, true);
                     }
 
-                    // 3. Track job count and rotate browser if threshold reached
-                    jobCount++;
-                    logger.info(`📊 Job ${jobCount}/${JOBS_PER_BROWSER_SESSION} processed.`);
-
-                    // Monitor Memory & Potential Page Leaks per concurrency audit
-                    const heapUsedMb = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                    logger.info(`💾 Heap Used: ${heapUsedMb} MB | Open Pages: ${browser.openPagesCount}`);
-
-                    if (jobCount >= JOBS_PER_BROWSER_SESSION) {
-                        await rotateBrowser(`${JOBS_PER_BROWSER_SESSION} jobs completed`);
-                    }
-
-                } catch (loopError) {
-                    logger.error('💥 Critical error in worker loop — forcing browser restart:', loopError);
-                    // Force browser restart to recover from potential Chromium crash
-                    try {
-                        await rotateBrowser('crash recovery');
-                    } catch (restartErr) {
-                        logger.error('💀 Failed to restart browser after crash:', restartErr);
-                    }
-                    // Sleep briefly to avoid tight loops on DB failures
-                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    await updateCompanyEmails(job.id, result.allEmails, verifiedDetails, job.jobId ?? undefined);
+                    await completeJob(job.id, true);
                 }
-            } catch (catastrophicError) {
-                logger.error('💥 Catastrophic error in worker loop. Sleeping for 30s before resuming.', catastrophicError);
-                // Attempt DB reconnection — connection may have been severed
+
+                // 3. Track job count and rotate browser if threshold reached
+                jobCount++;
+                logger.info(`📊 Job ${jobCount}/${JOBS_PER_BROWSER_SESSION} processed.`);
+
+                // Monitor Memory & Potential Page Leaks per concurrency audit
+                const heapUsedBytes = process.memoryUsage().heapUsed;
+                const heapUsedMb = (heapUsedBytes / 1024 / 1024).toFixed(2);
+                logger.info(`💾 Heap Used: ${heapUsedMb} MB | Open Pages: ${browser.openPagesCount}`);
+
+                // Proactive heap threshold — rotate before OOM
+                if (heapUsedBytes > 400 * 1024 * 1024) {
+                    await rotateBrowser('High memory threshold (400MB)');
+                } else if (jobCount >= JOBS_PER_BROWSER_SESSION) {
+                    await rotateBrowser(`${JOBS_PER_BROWSER_SESSION} jobs completed`);
+                }
+
+            } catch (loopError) {
+                // Transient per-job error — rotate browser and continue to next job
+                logger.error('💥 Error processing job — rotating browser:', loopError);
                 try {
-                    await disconnectDB();
-                    await connectDB();
-                    logger.info('🔌 Database reconnected successfully after catastrophic error.');
-                } catch (reconnectErr) {
-                    logger.error('💀 Database reconnection failed. Will retry on next loop.', reconnectErr);
+                    await rotateBrowser('crash recovery');
+                } catch (restartErr) {
+                    logger.error('💀 Failed to restart browser after crash:', restartErr);
                 }
-                await new Promise(resolve => setTimeout(resolve, 30000));
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                continue;
             }
         }
 

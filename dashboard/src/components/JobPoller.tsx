@@ -1,20 +1,70 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+
+interface JobUpdate {
+  id: string;
+  status: string;
+  resultsFound: number;
+  query: string;
+}
+
+function buildSnapshot(jobs: JobUpdate[]): string {
+  return jobs
+    .map((j) => `${j.id}:${j.status}|${j.resultsFound}`)
+    .sort()
+    .join(",");
+}
 
 export function JobPoller({ hasActiveJobs }: { hasActiveJobs: boolean }) {
   const router = useRouter();
+  const prevSnapshotRef = useRef<string>("");
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  const handleMessage = useCallback(
+    (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as {
+          type: string;
+          jobs?: JobUpdate[];
+        };
+        if (data.type !== "jobs" || !data.jobs) return;
+
+        const newSnapshot = buildSnapshot(data.jobs);
+        const prev = prevSnapshotRef.current;
+
+        if (prev !== "" && newSnapshot !== prev) {
+          router.refresh();
+        }
+
+        prevSnapshotRef.current = newSnapshot;
+      } catch {
+        // Malformed SSE data, ignore
+      }
+    },
+    [router]
+  );
 
   useEffect(() => {
-    if (!hasActiveJobs) return;
+    if (!hasActiveJobs) {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      prevSnapshotRef.current = "";
+      return;
+    }
 
-    const interval = setInterval(() => {
-      router.refresh();
-    }, 10000);
+    const es = new EventSource("/api/jobs/stream");
+    eventSourceRef.current = es;
+    es.onmessage = handleMessage;
 
-    return () => clearInterval(interval);
-  }, [hasActiveJobs, router]);
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+  }, [hasActiveJobs, handleMessage]);
 
   if (!hasActiveJobs) return null;
 

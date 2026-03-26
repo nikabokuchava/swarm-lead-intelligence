@@ -14,8 +14,7 @@ export async function getNextPendingLead(workerId: string): Promise<Company | nu
             UPDATE "companies"
             SET status = 'PROCESSING'::"ProcessingStatus",
                 "worker_id" = ${workerId},
-                "locked_at" = NOW(),
-                "retries" = "retries" + 1
+                "locked_at" = NOW()
             WHERE id = (
                 SELECT id
                 FROM "companies"
@@ -132,13 +131,14 @@ export async function failJobOrRetry(companyId: string, currentRetries: number, 
             data: { status: 'FAILED' }
         });
     } else {
-        // Release back to queue
+        // Release back to queue with atomic retry increment
         await prisma.company.update({
             where: { id: companyId },
-            data: { 
+            data: {
                 status: 'PENDING',
                 workerId: null,
-                lockedAt: null
+                lockedAt: null,
+                retries: { increment: 1 }
             }
         });
     }

@@ -56,7 +56,9 @@ export class StealthBrowser {
     }
 
     this.browser = await puppeteer.launch({
-      channel: 'chrome',
+      ...(process.env.PUPPETEER_EXECUTABLE_PATH
+        ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH }
+        : { channel: 'chrome' }),
       headless: true,
       protocolTimeout: 120000,
       args,

@@ -115,50 +115,49 @@ export async function updateCompanyEmails(
     }[] = [],
     jobId?: string
 ) {
-    // 1. Update the simple string array on Company
-    await prisma.company.update({
-        where: { id: companyId },
-        data: {
-            emails: emails,
-            emailScraped: true,
-            emailScrapedAt: new Date()
-        }
-    });
-
-    // 2. Create detailed Contact records (deduplicated)
-    if (details.length > 0) {
-        // In-memory dedup by normalized email before hitting DB
-        const seen = new Set<string>();
-        const dedupedDetails = details.filter(d => {
-            const key = d.email.toLowerCase();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
+    // Atomic transaction: update Company + create Contacts together
+    await prisma.$transaction(async (tx) => {
+        // 1. Update the simple string array on Company
+        await tx.company.update({
+            where: { id: companyId },
+            data: {
+                emails: emails,
+                emailScraped: true,
+                emailScrapedAt: new Date()
+            }
         });
 
-        const contactsData = dedupedDetails.map(d => ({
-             companyId: companyId,
-             workEmail: d.email,
-             confidenceScore: d.confidence,
-             emailSource: d.source,
-             emailType: d.type || 'generic',
-             verificationStatus: d.verificationStatus || 'UNKNOWN',
-             mxProvider: d.mxProvider,
-             jobId: jobId,
-             fullName: d.fullName || 'Unknown',
-             title: d.title || null,
-             isCLevel: d.isCLevel ?? false
-        }));
+        // 2. Create detailed Contact records (deduplicated)
+        if (details.length > 0) {
+            // In-memory dedup by normalized email before hitting DB
+            const seen = new Set<string>();
+            const dedupedDetails = details.filter(d => {
+                const key = d.email.toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
 
-        try {
-            await prisma.contact.createMany({
+            const contactsData = dedupedDetails.map(d => ({
+                 companyId: companyId,
+                 workEmail: d.email,
+                 confidenceScore: d.confidence,
+                 emailSource: d.source,
+                 emailType: d.type || 'generic',
+                 verificationStatus: d.verificationStatus || 'UNKNOWN',
+                 mxProvider: d.mxProvider,
+                 jobId: jobId,
+                 fullName: d.fullName || 'Unknown',
+                 title: d.title || null,
+                 isCLevel: d.isCLevel ?? false
+            }));
+
+            await tx.contact.createMany({
                 data: contactsData,
                 skipDuplicates: true,
             });
-        } catch (err) {
-            console.warn('⚠️ Failed to batch insert contacts (possible constraint conflict).', err);
         }
-    }
+    });
 }
 
 /**

@@ -5,6 +5,7 @@ async function main() {
     
     const emails = [
         'test@gmail.com',
+        'asdfghjkl@gmail.com',
         'test@microsoft.com',
         'invalid-email@nonexistent-domain-12345.com'
     ];

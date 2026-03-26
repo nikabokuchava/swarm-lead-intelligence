@@ -12,6 +12,17 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
 
+    // SEC: Defense-in-depth — verify jobId belongs to requesting user
+    if (jobId) {
+      const job = await prisma.scrapeJob.findUnique({
+        where: { id: jobId },
+        select: { userId: true },
+      });
+      if (!job || job.userId !== userId) {
+        return new NextResponse('Forbidden', { status: 403 });
+      }
+    }
+
     const whereClause = {
       userId,
       ...(jobId ? { jobId } : {}),

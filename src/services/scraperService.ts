@@ -9,11 +9,12 @@ import { createAppLogger } from '../utils/logger.js';
 // ARC-09: Use shared logger (removed stale duplicated winston config)
 const logger = createAppLogger();
 
-export async function processJob(taskId: string, headlessMode: boolean = true) {
+export async function processJob(taskId: string, headlessMode: boolean = true, externalBrowser?: StealthBrowser) {
     let scraper: GoogleMapsScraper | null = null;
     // ARC-02: Single shared StealthBrowser for both maps data collection + email crawl
     let sharedBrowser: StealthBrowser | null = null;
-    
+    const ownsLocalBrowser = !externalBrowser;
+
     try {
         const task = await prisma.scrapeTask.findUnique({ 
             where: { id: taskId },
@@ -37,10 +38,15 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
             data: { status: 'PROCESSING' }
         });
 
-        // ARC-02: Launch one shared StealthBrowser for the entire job
-        sharedBrowser = new StealthBrowser();
-        await sharedBrowser.launch();
-        logger.info('🌐 Shared StealthBrowser initialized for job.');
+        // ARC-02: Reuse external browser if provided, otherwise launch a local one
+        if (externalBrowser) {
+            sharedBrowser = externalBrowser;
+            logger.info('🌐 Reusing external StealthBrowser for job.');
+        } else {
+            sharedBrowser = new StealthBrowser();
+            await sharedBrowser.launch();
+            logger.info('🌐 Launched local StealthBrowser for job.');
+        }
 
         scraper = new GoogleMapsScraper();
         // Pass sharedBrowser so maps collector reuses the same Chromium process
@@ -58,16 +64,14 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
         let added = 0;
         let skipped = 0;
 
+        // D1: Use atomic counter instead of expensive COUNT(*) per link
+        let baselineCount = job.resultsFound || 0;
+
         for (const link of links) {
-            // Check quota BEFORE processing each lead
-            if (job.maxResults) {
-                const currentCount = await prisma.company.count({
-                    where: { jobId: job.id }
-                });
-                if (currentCount >= job.maxResults) {
-                    logger.info(`🛑 Quota reached (${currentCount}/${job.maxResults}) for Job ${job.id}. Stopping task ${taskId}.`);
-                    break;
-                }
+            // Check quota BEFORE processing each lead using local counter
+            if (job.maxResults && (baselineCount + added) >= job.maxResults) {
+                logger.info(`🛑 Quota reached (${baselineCount + added}/${job.maxResults}) for Job ${job.id}. Stopping task ${taskId}.`);
+                break;
             }
 
             try {
@@ -150,7 +154,8 @@ export async function processJob(taskId: string, headlessMode: boolean = true) {
     } finally {
         // ARC-02: collector only closes its page, sharedBrowser owns the process
         if (scraper) await scraper.close();
-        if (sharedBrowser) await sharedBrowser.close();
+        // Only close browser if we created it locally (not when reusing external)
+        if (ownsLocalBrowser && sharedBrowser) await sharedBrowser.close();
     }
 }
 

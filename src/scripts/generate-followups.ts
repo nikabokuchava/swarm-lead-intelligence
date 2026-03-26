@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,12 +11,24 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '../../');
 
 const prisma = new PrismaClient();
-const openai = createOpenAI({});
+const google = createGoogleGenerativeAI({});
 const LIMIT = 60;
 
-// CLI flag: --day4 triggers switch-angle mode
+// CLI flags
 const IS_DAY4 = process.argv.includes('--day4');
-const OUTPUT_FILE = IS_DAY4 ? 'day4-switch-angle-ready.csv' : 'day3-followups-ready.md';
+const IS_DAY7 = process.argv.includes('--day7');
+const IS_POST_SAMPLE = process.argv.includes('--post-sample');
+
+type SequenceMode = 'day3' | 'day4' | 'day7' | 'post-sample';
+const MODE: SequenceMode = IS_POST_SAMPLE ? 'post-sample' : IS_DAY7 ? 'day7' : IS_DAY4 ? 'day4' : 'day3';
+
+const OUTPUT_FILE_MAP: Record<SequenceMode, string> = {
+  'day3': 'day3-followups-ready.md',
+  'day4': 'day4-switch-angle-ready.csv',
+  'day7': 'day7-switch-angle-cold.csv',
+  'post-sample': 'day5-agency-pitch-fixed.csv',
+};
+const OUTPUT_FILE = OUTPUT_FILE_MAP[MODE];
 
 const DAY3_SYSTEM_PROMPT = `You are a cold email copywriter for TrueBase, an AI-verified contact data platform for agencies.
 You are writing a SHORT follow-up ("bump") email for a lead that did not reply to the initial outreach.
@@ -68,7 +80,82 @@ Want me to send 50 [Niche] leads as a free sample? Just say the word.
 
 Personalize lightly using the lead data provided. Replace [Niche] with the agency's focus area inferred from their name/website. Keep the tone casual and confident.`;
 
-const SYSTEM_PROMPT = IS_DAY4 ? DAY4_SYSTEM_PROMPT : DAY3_SYSTEM_PROMPT;
+const DAY7_SYSTEM_PROMPT = `You are a cold email copywriter for TrueBase, an AI-verified contact data platform for agencies.
+You are writing a "Decision-Maker Access" angle email — a fresh cold pitch for a prospect who has not engaged with previous outreach. This email pivots to the DECISION-MAKER angle: agencies struggle to reach business owners and decision-makers because generic databases only list info@ and generic roles.
+
+STRICT RULES:
+- Output ONLY the email body. No commentary, no labels, no "Body:" prefix.
+- The email must be under 75 words (excluding sign-off).
+- Do NOT include a subject line — the subject is provided separately.
+- The core message: most [Niche] lead lists give you info@ addresses and office managers. TrueBase uses AI to find the actual decision-makers — owners, founders, directors — with a confidence score (0-100) and live MX verification on every email.
+- End with the free 50-lead CSV offer: "Want me to send 50 [Niche] leads as a free sample?"
+- Sign off as: — Nick Bokuchava, Founder, TrueBase
+- If the contact name is "Unknown" or empty, address to "Team at [Company Name]".
+- Do NOT mention previous emails, "following up", or "hope the sample was useful". This is a standalone cold pitch.
+
+TEMPLATE (Decision-Maker Access Angle):
+
+Hi [First Name],
+
+Most [Niche] lead lists give you info@ addresses and office managers. We use AI to find the actual decision-makers — owners, founders, directors — with a confidence score (0-100) and live MX verification on every email.
+
+Want me to send 50 [Niche] leads as a free sample? Just say the word.
+
+— Nick Bokuchava, Founder, TrueBase
+
+Personalize lightly using the lead data provided. Replace [Niche] with the agency's focus area inferred from their name/website. Keep the tone casual and direct.`;
+
+const SYSTEM_PROMPT_MAP: Record<SequenceMode, string> = {
+  'day3': DAY3_SYSTEM_PROMPT,
+  'day4': DAY4_SYSTEM_PROMPT,
+  'day7': DAY7_SYSTEM_PROMPT,
+  'post-sample': DAY3_SYSTEM_PROMPT, // unused for post-sample (deterministic)
+};
+const SYSTEM_PROMPT = SYSTEM_PROMPT_MAP[MODE];
+
+// Map agency search query → target client niche (what the agency's CLIENTS are)
+const QUERY_TO_TARGET_NICHE: Array<[RegExp, string]> = [
+  [/medspa\s+marketing/i, 'MedSpas'],
+  [/healthcare\s+marketing/i, 'healthcare practices'],
+  [/dental\s+marketing/i, 'dental clinics'],
+  [/hvac\s+marketing/i, 'HVAC contractors'],
+  [/real\s*estate\s+marketing/i, 'real estate agencies'],
+  [/legal\s+marketing|law\s+firm\s+marketing/i, 'law firms'],
+  [/fitness\s+marketing|gym\s+marketing/i, 'fitness studios'],
+  [/restaurant\s+marketing/i, 'restaurants'],
+  [/roofing\s+marketing/i, 'roofing contractors'],
+  [/plumbing\s+marketing/i, 'plumbing companies'],
+  [/auto\s+marketing|automotive\s+marketing/i, 'auto dealerships'],
+  [/insurance\s+marketing/i, 'insurance agencies'],
+  [/home\s+services?\s+marketing/i, 'home service businesses'],
+];
+
+// CLI override: --target-niche "MedSpas"
+const TARGET_NICHE_OVERRIDE = (() => {
+  const idx = process.argv.indexOf('--target-niche');
+  return idx !== -1 && process.argv[idx + 1] ? process.argv[idx + 1] : null;
+})();
+
+function extractTargetNiche(query: string): string {
+  if (TARGET_NICHE_OVERRIDE) return TARGET_NICHE_OVERRIDE;
+
+  for (const [pattern, niche] of QUERY_TO_TARGET_NICHE) {
+    if (pattern.test(query)) return niche;
+  }
+  // Generic agencies — offer a broadly useful vertical
+  return 'local businesses';
+}
+
+function extractCity(query: string): string | null {
+  const match = query.match(/\bin\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+// Post-Sample Close Sequence: Day 5 Agency Pack pitch (deterministic, no LLM)
+function buildDay5AgencyPackBody(firstName: string, targetNiche: string, city: string | null): string {
+  const nicheWithCity = city ? `${targetNiche} in ${city}` : targetNiche;
+  return `Hi ${firstName},\n\nHope the sample was useful. If the quality works for you — Agency Pack = 5,000 leads + weekly refresh + decision-maker emails for $197. Want one for ${nicheWithCity}?\n\n— Nick Bokuchava, Founder, TrueBase`;
+}
 
 interface FollowUpDraft {
   companyName: string;
@@ -147,7 +234,7 @@ async function main(): Promise<void> {
           { isCLevel: 'desc' },
           { confidenceScore: 'desc' },
         ],
-        take: 1,
+        take: 3,
       },
       scrapeJob: { select: { query: true } },
     },
@@ -179,39 +266,75 @@ async function main(): Promise<void> {
   console.log(`\n${eligible.length} agencies passed filters (${companies.length - eligible.length} excluded). Generating...\n`);
 
   const drafts: FollowUpDraft[] = [];
-  const subject = IS_DAY4
-    ? "leads that aren't on apollo"
-    : "re: whats your list bounce rate?";
+  const subjectMap: Record<SequenceMode, string> = {
+    'day3': "re: whats your list bounce rate?",
+    'day4': "leads that aren't on apollo",
+    'day7': "finding decision-makers your competitors miss",
+    'post-sample': "re: your sample leads",
+  };
+  const subject = subjectMap[MODE];
 
   for (const company of eligible) {
-    const contact = company.contacts[0];
+    // Prefer: named contact with personal email > named contact > any contact
+    const namedPersonal = company.contacts.find(
+      (c) => c.fullName && c.fullName !== 'Unknown' && c.emailType === 'personal' && c.workEmail
+    );
+    const namedAny = company.contacts.find(
+      (c) => c.fullName && c.fullName !== 'Unknown' && c.workEmail
+    );
+    const contact = namedPersonal ?? namedAny ?? company.contacts[0];
     const contactName = contact?.fullName && contact.fullName !== 'Unknown'
       ? contact.fullName
       : '';
     const contactEmail = (contact?.workEmail ?? company.emails[0] ?? '').trim();
-    const niche = company.scrapeJob?.query ?? 'marketing';
+    const rawQuery = company.scrapeJob?.query ?? 'marketing';
+    const targetNiche = extractTargetNiche(rawQuery);
+    const city = extractCity(rawQuery);
 
-    const userPrompt = IS_DAY4
-      ? `Lead data:
+    // Truncate overly long company names for the Contact Name field
+    // Split on " | ", " — ", " - " (with spaces), or ":"  but NOT bare hyphens inside words
+    const shortName = company.name.split(/\s*[|—]\s*|\s+- \s*|:\s*/)[0].trim();
+
+    if (MODE === 'post-sample') {
+      // Deterministic Day 5 Agency Pack pitch — no LLM call
+      const displayName = contactName || `Team at ${shortName}`;
+      const firstName = displayName.split(' ')[0];
+      const body = buildDay5AgencyPackBody(firstName, targetNiche, city);
+
+      drafts.push({
+        companyName: shortName,
+        contactName: contactName || `Team at ${shortName}`,
+        contactEmail,
+        subject,
+        body,
+      });
+
+      console.log(`  [${drafts.length}/${eligible.length}] ${shortName}`);
+      continue;
+    }
+
+    const leadData = `Lead data:
 - Company: ${company.name}
 - Website: ${company.website ?? 'N/A'}
 - Contact Name: ${contactName || 'Unknown'}
 - Contact Email: ${contactEmail}
-- Niche/Query: ${niche}
+- Niche/Query: ${targetNiche}`;
 
-Generate a "Hidden Market" angle email. Emphasize that ${niche} businesses are invisible on Apollo/ZoomInfo. Mention AI confidence scores (0-100) and live MX verification. Include the free 50-lead CSV offer. Under 75 words.`
-      : `Lead data:
-- Company: ${company.name}
-- Website: ${company.website ?? 'N/A'}
-- Contact Name: ${contactName || 'Unknown'}
-- Contact Email: ${contactEmail}
-- Niche/Query: ${niche}
+    const userPrompt = MODE === 'day7'
+      ? `${leadData}
+
+Generate a "Decision-Maker Access" angle email. Emphasize that most ${targetNiche} lead lists only give info@ addresses — TrueBase finds actual owners and directors. Mention AI confidence scores (0-100) and live MX verification. End with the free 50-lead CSV offer. Under 75 words.`
+      : MODE === 'day4'
+      ? `${leadData}
+
+Generate a "Hidden Market" angle email. Emphasize that ${targetNiche} businesses are invisible on Apollo/ZoomInfo. Mention AI confidence scores (0-100) and live MX verification. Include the free 50-lead CSV offer. Under 75 words.`
+      : `${leadData}
 
 Generate a personalized follow-up bump email. Keep it under 50 words.`;
 
     try {
       const result = await generateText({
-        model: openai('gpt-4o-mini'),
+        model: google('gemini-2.5-flash'),
         system: SYSTEM_PROMPT,
         prompt: userPrompt,
         maxOutputTokens: 200,
@@ -229,16 +352,13 @@ Generate a personalized follow-up bump email. Keep it under 50 words.`;
         const displayName = contactName || `Team at ${company.name}`;
         body = body
           .replace(/\[First Name\]/gi, displayName.split(' ')[0])
-          .replace(/\[(?:Micro-Niche|Niche)\]/gi, niche)
+          .replace(/\[(?:Micro-Niche|Niche)\]/gi, targetNiche)
           .replace(/\[(?:Company Name|Agency Name)\]/gi, company.name)
           .replace(/\[Your First Name\]/gi, 'Nick')
           .replace(/\[X,000\]/gi, '1,000');
         console.warn(`  [QG-FIX] ${company.name}: raw brackets replaced`);
       }
 
-      // Truncate overly long company names for the Contact Name field
-      // Split on " | ", " — ", " - " (with spaces), or ":"  but NOT bare hyphens inside words
-      const shortName = company.name.split(/\s*[|—]\s*|\s+- \s*|:\s*/)[0].trim();
       drafts.push({
         companyName: shortName,
         contactName: contactName || `Team at ${shortName}`,
@@ -265,8 +385,8 @@ Generate a personalized follow-up bump email. Keep it under 50 words.`;
 
   const outputPath = path.join(rootDir, OUTPUT_FILE);
 
-  if (IS_DAY4) {
-    // CSV output for Day 4 switch-angle
+  if (MODE === 'day4' || MODE === 'day7' || MODE === 'post-sample') {
+    // CSV output for Day 4 switch-angle and Post-Sample Day 5
     const escCsv = (s: string): string => {
       if (s.includes('"') || s.includes(',') || s.includes('\n')) {
         return `"${s.replace(/"/g, '""')}"`;

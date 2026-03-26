@@ -1,7 +1,7 @@
 import sanitizeHtml from 'sanitize-html';
 import { generateObject } from 'ai';
 import { z } from 'zod';
-import { createOpenAI } from '@ai-sdk/openai'; 
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 // Schema for structured output — strict-mode compatible (no Zod refinements)
 const EmailExtractionSchema = z.object({
@@ -12,6 +12,12 @@ const EmailExtractionSchema = z.object({
 });
 
 type EmailExtractionResult = z.infer<typeof EmailExtractionSchema>;
+
+// Allowed executive roles — schema enum prevents LLM from returning non-executives
+const EXECUTIVE_ROLES = [
+  'Founder', 'Co-Founder', 'CEO', 'Owner', 'Partner',
+  'President', 'Managing Director', 'Principal',
+] as const;
 
 export interface KeyPerson {
   name: string;
@@ -55,8 +61,8 @@ const LEGIT_CCTLD_PAIRS = new Set([
 
 
 export class HybridParser {
-  private openai = createOpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+  private google = createGoogleGenerativeAI({
+      apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   });
 
   private classifyEmail(email: string): { type: 'generic' | 'personal', confidence: number } {
@@ -106,7 +112,7 @@ export class HybridParser {
     const uniqueFindings = this.deduplicateAndFilter(findings);
 
     // Step 3: LLM — always run when requested (extracts people + email fallback)
-    if (useLlmInfo && process.env.OPENAI_API_KEY) {
+    if (useLlmInfo && process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
         const llmResult = await this.extractWithLlm(cleanText);
         return {
             emails: this.deduplicateAndFilter([...uniqueFindings, ...llmResult.emails]),
@@ -255,32 +261,97 @@ export class HybridParser {
       });
   }
 
+  /**
+   * Deterministic post-filter: rejects garbage names and non-executive roles
+   * that slip through LLM extraction despite schema constraints.
+   */
+  private isValidExecutiveName(name: string, role: string): boolean {
+    const words = name.trim().split(/\s+/);
+    if (words.length < 2) return false;
+    if (name.length < 4 || name.length > 60) return false;
+
+    // Reject descriptive relationships and articles
+    if (/^(our|my|his|her|their|the|a|an)\s/i.test(name)) return false;
+    // Reject family descriptors embedded anywhere
+    if (/\b(father|mother|grandfather|grandmother|son|daughter|brother|sister|husband|wife)\b/i.test(name)) return false;
+    // Reject collective nouns
+    if (/\b(team|staff|crew|group)\b/i.test(name)) return false;
+    // Reject names with numbers or special chars (allow periods, hyphens, apostrophes)
+    if (/[^a-zA-ZÀ-ÿ\s.\-']/.test(name)) return false;
+
+    // Each word should start with uppercase (allow short particles like "de", "van", "von")
+    if (!words.every(w => /^[A-ZÀ-Ý]/.test(w) || w.length <= 3)) return false;
+
+    // Role must match known executive titles
+    const normalizedRole = role.toLowerCase().trim();
+    const EXEC_ROLES_LOWER = new Set(EXECUTIVE_ROLES.map(r => r.toLowerCase()));
+    if (![...EXEC_ROLES_LOWER].some(r => normalizedRole.includes(r))) return false;
+
+    return true;
+  }
+
   private async extractWithLlm(text: string): Promise<{ emails: EmailExtractionResult[]; keyPeople: KeyPerson[] }> {
      try {
-        const model = this.openai(process.env.EMAIL_LLM_MODEL || 'gpt-4o-mini');
+        const model = this.google(process.env.EMAIL_LLM_MODEL || 'gemini-2.5-flash');
 
         // Truncate text if too long to save tokens
-        const truncatedText = text.slice(0, 15000);
+        const truncatedText = text.slice(0, 40000);
 
         const { object } = await generateObject({
             model: model,
+            temperature: 0,
             schema: z.object({
                 emails: z.array(EmailExtractionSchema),
                 keyPeople: z.array(z.object({
-                    name: z.string(),
-                    role: z.string(),
+                    name: z.string().describe(
+                        "Exact full name as written on the page. " +
+                        "MUST contain a first name AND a last name separated by a space (minimum 2 words). " +
+                        "Single words, nicknames, or descriptions like 'our father' are FORBIDDEN."
+                    ),
+                    role: z.enum(EXECUTIVE_ROLES).describe(
+                        "Executive title. Only these exact roles qualify."
+                    ),
+                    nameWordCount: z.number().int().min(2).describe(
+                        "Number of space-separated words in the extracted name. Must be >= 2."
+                    ),
                 })),
             }),
-            prompt: `
-              Analyze the following text from a company website and extract:
-              1. Valid email addresses. Focus on contact emails (info@, sales@) or specific people.
-                 Ignore placeholder examples like 'email@example.com'.
-              2. Also extract the names of any Founders, CEOs, or Owners mentioned in the text.
+            prompt: `You are an elite B2B data extractor. Extract ONLY verified executive leadership from this company website.
 
-              Text content:
-              ${truncatedText}
-            `,
+TASK:
+1. Extract valid email addresses. Focus on contact emails (info@, sales@) or specific people.
+   Ignore placeholder examples like 'email@example.com'.
+2. Extract key people: ONLY Founders, CEOs, Owners, Partners, Presidents, Managing Directors, or Principals.
+   - Each name MUST have a first name AND a last name (two words minimum).
+   - If a full name is not explicitly stated on the page, do NOT guess or extract it.
+   - Return an EMPTY keyPeople array if no qualified executives are found. Empty is correct.
+
+EXAMPLES:
+Input: "Founded by Tony in 2005, our team of 20 technicians..."
+Output: {"keyPeople": []}
+Reason: "Tony" is a partial name with no last name. REJECT.
+
+Input: "Started by our father (Founder) who built this company from the ground up..."
+Output: {"keyPeople": []}
+Reason: "our father" is a descriptor/relationship, not a name. REJECT.
+
+Input: "John Smith, Owner & Lead Technician | Sarah Connor, Office Manager"
+Output: {"keyPeople": [{"name": "John Smith", "role": "Owner", "nameWordCount": 2}]}
+Reason: Only John Smith has an executive role. Sarah Connor is Office Manager (not executive). REJECT her.
+
+Input: "About Us: CEO Robert James Wilson established ABC Plumbing in 1998"
+Output: {"keyPeople": [{"name": "Robert James Wilson", "role": "CEO", "nameWordCount": 3}]}
+
+Text content:
+${truncatedText}
+`,
         });
+
+        // Deterministic post-filter: safety net for any garbage that slips through
+        const filteredPeople = object.keyPeople
+            .filter(p => p.nameWordCount >= 2 && p.name.trim().split(/\s+/).length >= 2)
+            .filter(p => this.isValidExecutiveName(p.name, p.role))
+            .map(p => ({ name: p.name.trim(), role: p.role }));
 
         return {
             emails: object.emails.map(e => ({
@@ -288,7 +359,7 @@ export class HybridParser {
                 confidence: Math.min(100, Math.max(0, e.confidence)),
                 source: 'LLM' as const
             })),
-            keyPeople: object.keyPeople,
+            keyPeople: filteredPeople,
         };
      } catch (error) {
          console.error("❌ LLM extraction FAILED (C-Level inference will not trigger):", error instanceof Error ? error.message : error);

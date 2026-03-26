@@ -38,6 +38,10 @@ docs/*INDIEHACKERS*.md
 docs/*REVIEW*.md
 docs/*PROMPT*.md
 
+# Outreach / client data (never commit)
+day3-followups-ready.md
+generate-sample-csv.md
+
 # Build artifacts & editor config
 .next/
 .vscode/

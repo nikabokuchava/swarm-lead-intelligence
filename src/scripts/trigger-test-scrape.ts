@@ -1,20 +1,20 @@
 import { prisma } from '../db/prisma.js';
 
-const QUERY = 'HVAC Contractor';
-const LOCATION = 'Miami, FL';
+const QUERY = 'Marketing Agency';
+const LOCATION = 'Los Angeles, CA';
 const MAX_RESULTS = 100;
 const IS_PREMIUM = true;
 
-// Representative Miami zip grid (8 zips to hit 100 lead goal)
+// Representative Los Angeles zip grid (8 zips to hit 100 lead goal)
 const ZIP_CODES = [
-  '33101', // Downtown Miami
-  '33125', // Little Havana
-  '33127', // Wynwood / Edgewater
-  '33130', // Brickell
-  '33131', // Brickell Key / Downtown
-  '33133', // Coral Gables North
-  '33135', // Flagami
-  '33145', // Shenandoah / Silver Bluff
+  '90001', // South LA
+  '90012', // Downtown LA
+  '90028', // Hollywood
+  '90036', // Mid-Wilshire
+  '90046', // West Hollywood
+  '90066', // Mar Vista / West LA
+  '90210', // Beverly Hills
+  '90401', // Santa Monica
 ] as const;
 
 async function triggerTestScrape() {

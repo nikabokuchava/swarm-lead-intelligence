@@ -23,11 +23,44 @@ export interface SmtpProbeResult {
   error?: string;
 }
 
-const SMTP_TIMEOUT_MS = 5000;
+const SMTP_TIMEOUT_MS = 3000;
 const HELO_DOMAIN = 'truebase.cc';
 const PROBE_FROM = `ping@${HELO_DOMAIN}`;
 
 const DOMAIN_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+
+/** T1: Domain-level MX cache — avoids redundant DNS + catch-all probes for same domain */
+interface MxCacheEntry {
+    primaryMx: string;
+    provider: string;
+    isCatchAll: boolean;
+}
+const mxCache = new Map<string, MxCacheEntry>();
+
+/** Clear the MX cache (for testing or long-running process memory management) */
+export function clearMxCache(): void {
+    mxCache.clear();
+}
+
+/**
+ * Resolve MX info for a domain, using cache if available.
+ * Performs DNS MX lookup + catch-all detection once per domain.
+ */
+export async function getMxInfo(domain: string): Promise<MxCacheEntry | null> {
+    const cached = mxCache.get(domain);
+    if (cached) return cached;
+
+    const mxRecords = await dnsResolver.resolveMx(domain);
+    if (!mxRecords || mxRecords.length === 0) return null;
+
+    const primaryMx = mxRecords.sort((a, b) => a.priority - b.priority)[0].exchange;
+    const provider = getProvider(primaryMx);
+    const isCatchAll = await isCatchAllDomain(domain, primaryMx);
+
+    const entry: MxCacheEntry = { primaryMx, provider, isCatchAll };
+    mxCache.set(domain, entry);
+    return entry;
+}
 
 /** DNS error codes that indicate the domain definitively does not exist. */
 const DOMAIN_NOT_FOUND_CODES = new Set(['ENOTFOUND', 'ENODATA', 'ESERVFAIL']);
@@ -196,17 +229,15 @@ export async function verifyEmail(email: string): Promise<EmailVerificationResul
     }
 
     try {
-        const mxRecords = await dnsResolver.resolveMx(domain);
+        // T1: Use cached MX info — DNS + catch-all resolved once per domain
+        const mxInfo = await getMxInfo(domain);
 
-        if (!mxRecords || mxRecords.length === 0) {
+        if (!mxInfo) {
             return { status: 'INVALID', confidence: 0, error: 'No MX records found' };
         }
 
-        const primaryMx = mxRecords.sort((a, b) => a.priority - b.priority)[0].exchange;
-        const provider = getProvider(primaryMx);
+        const { primaryMx, provider, isCatchAll: catchAll } = mxInfo;
 
-        // SMTP-level catch-all detection: probe with garbage address
-        const catchAll = await isCatchAllDomain(domain, primaryMx);
         if (catchAll) {
             return { status: 'CATCH_ALL', mxProvider: provider, confidence: 40 };
         }
@@ -222,9 +253,9 @@ export async function verifyEmail(email: string): Promise<EmailVerificationResul
         }
 
         // SMTP unreachable (port 25 blocked on consumer ISPs) but MX records exist —
-        // valid MX is strong enough signal to mark VALID at reduced confidence.
-        // Without this fallback, every email stays UNKNOWN on residential networks.
-        return { status: 'VALID', mxProvider: provider, confidence: 70, error: `SMTP unreachable, MX-validated fallback (${smtpResult.error})` };
+        // Conservative: return UNKNOWN to prevent hard bounces from unverified mailboxes.
+        // Only SMTP-confirmed addresses should reach campaigns.
+        return { status: 'UNKNOWN', mxProvider: provider, confidence: 30, error: `SMTP unreachable, mailbox unverified (${smtpResult.error})` };
     } catch (err: unknown) {
         // Distinguish between "domain does not exist" and transient network errors
         const code = (err as NodeJS.ErrnoException)?.code;

@@ -28,6 +28,8 @@ services:
       dockerfile: Dockerfile.worker
     container_name: swarm_worker
     restart: unless-stopped
+    shm_size: '2gb'
+    env_file: .env
     depends_on:
       postgres:
         condition: service_healthy

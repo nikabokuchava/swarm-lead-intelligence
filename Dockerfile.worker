@@ -24,7 +24,9 @@ FROM node:20-slim AS runtime
 
 # Puppeteer / Chrome runtime dependencies
 RUN apt-get update && apt-get install -y \
+    ca-certificates \
     chromium \
+    fonts-liberation \
     libatk-bridge2.0-0 \
     libcups2 \
     libdrm2 \
@@ -59,5 +61,5 @@ COPY prisma ./prisma/
 # Generate Prisma client for the runtime environment
 RUN npx prisma generate
 
-# Run migrations then start the worker in --serve mode
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/worker.js"]
+# Run migrations, then start BOTH the job poller (Maps scraping) and email worker
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js --serve & node dist/worker.js"]

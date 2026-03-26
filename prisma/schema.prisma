@@ -15,59 +15,59 @@ enum ProcessingStatus {
 }
 
 model Company {
-  id             String           @id @default(uuid())
-  userId         String           @map("user_id") @default("admin")
+  id             String    @id @default(uuid())
+  userId         String    @default("admin") @map("user_id")
   name           String
   website        String?
   phone          String?
   address        String?
   source         String?
   rating         Float?
-  reviewCount    Int?             @map("review_count")
-  emails         String[]         @default([])
-  emailScraped   Boolean          @default(false) @map("email_scraped")
-  emailScrapedAt DateTime?        @map("email_scraped_at")
-  
+  reviewCount    Int?      @map("review_count")
+  emails         String[]  @default([])
+  emailScraped   Boolean   @default(false) @map("email_scraped")
+  emailScrapedAt DateTime? @map("email_scraped_at")
+
   // Job Queue Fields
-  status         ProcessingStatus @default(PENDING)
-  workerId       String?          @map("worker_id")
-  lockedAt       DateTime?        @map("locked_at")
-  retries        Int              @default(0)
-  
+  status   ProcessingStatus @default(PENDING)
+  workerId String?          @map("worker_id")
+  lockedAt DateTime?        @map("locked_at")
+  retries  Int              @default(0)
+
   // Job Reference
-  jobId          String?          @map("job_id")
-  scrapeJob      ScrapeJob?       @relation(fields: [jobId], references: [id])
-  
-  createdAt      DateTime         @default(now()) @map("created_at")
-  contacts       Contact[]
-  
-  @@map("companies")
+  jobId     String?    @map("job_id")
+  scrapeJob ScrapeJob? @relation(fields: [jobId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  contacts  Contact[]
+
   @@index([status, createdAt])
   @@index([userId])
   @@index([jobId])
+  @@map("companies")
 }
 
 model Contact {
-  id              String   @id @default(uuid())
-  companyId       String   @map("company_id")
-  fullName        String   @map("full_name")
+  id              String  @id @default(uuid())
+  companyId       String  @map("company_id")
+  fullName        String  @map("full_name")
   title           String?
-  linkedinUrl     String?  @map("linkedin_url")
-  workEmail       String?  @map("work_email")
-  jobId           String?  @map("job_id") // Optional relation to ScrapeJob
-  emailSource     String?  @map("email_source") // REGEX, LLM, HYBRID
-  emailType       String?  @map("email_type")   // personal, generic
-  confidenceScore Float?   @map("confidence_score") // 0-100
-  
+  linkedinUrl     String? @map("linkedin_url")
+  workEmail       String? @map("work_email")
+  jobId           String? @map("job_id") // Optional relation to ScrapeJob
+  emailSource     String? @map("email_source") // REGEX, LLM, HYBRID
+  emailType       String? @map("email_type") // personal, generic
+  confidenceScore Float?  @map("confidence_score") // 0-100
+
   // Verification Fields
-  verificationStatus String @default("UNKNOWN") @map("verification_status") // VALID, INVALID, UNKNOWN
-  mxProvider         String?                    @map("mx_provider")         // Google, Outlook, etc.
-  isCLevel           Boolean  @default(false)   @map("is_c_level")
-  
-  createdAt       DateTime @default(now()) @map("created_at")
-  
+  verificationStatus String  @default("UNKNOWN") @map("verification_status") // VALID, INVALID, UNKNOWN
+  mxProvider         String? @map("mx_provider") // Google, Outlook, etc.
+  isCLevel           Boolean @default(false) @map("is_c_level")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
   scrapeJob ScrapeJob? @relation(fields: [jobId], references: [id])
-  
+
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, workEmail])
@@ -75,21 +75,21 @@ model Contact {
 }
 
 model ScrapeJob {
-  id           String    @id @default(uuid())
-  userId       String    @map("user_id") @default("admin")
+  id           String           @id @default(uuid())
+  userId       String           @default("admin") @map("user_id")
   query        String
   status       ProcessingStatus @default(PENDING)
-  isPremium    Boolean   @default(false) @map("is_premium")
-  maxResults   Int?      @map("max_results")
-  resultsFound Int       @default(0) @map("results_found")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  completedAt  DateTime? @map("completed_at")
+  isPremium    Boolean          @default(false) @map("is_premium")
+  maxResults   Int?             @map("max_results")
+  resultsFound Int              @default(0) @map("results_found")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  completedAt  DateTime?        @map("completed_at")
   contacts     Contact[]
   companies    Company[]
   tasks        ScrapeTask[]
 
-  @@map("scrape_jobs")
   @@index([userId])
+  @@map("scrape_jobs")
 }
 
 model User {
@@ -110,20 +110,20 @@ model ProcessedEvent {
 }
 
 model ScrapeTask {
-  id        String           @id @default(uuid())
-  jobId     String           @map("job_id")
-  zipCode   String?          @map("zip_code")
-  query     String           // Need query for the worker so it doesn't have to join job
-  status    ProcessingStatus @default(PENDING)
-  workerId  String?          @map("worker_id")
+  id         String           @id @default(uuid())
+  jobId      String           @map("job_id")
+  zipCode    String?          @map("zip_code")
+  query      String // Need query for the worker so it doesn't have to join job
+  status     ProcessingStatus @default(PENDING)
+  workerId   String?          @map("worker_id")
   lockedAt   DateTime?        @map("locked_at")
   retries    Int              @default(0)
   maxRetries Int              @default(3) @map("max_retries")
   createdAt  DateTime         @default(now()) @map("created_at")
 
-  scrapeJob ScrapeJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  
-  @@map("scrape_tasks")
+  scrapeJob ScrapeJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
   @@index([status, createdAt])
   @@index([jobId])
+  @@map("scrape_tasks")
 }

@@ -49,7 +49,9 @@ export class GoogleMapsScraper {
             // Standalone mode: launch own browser (CLI backward-compat)
             this._ownsBrowser = true;
             this.browser = await standalonePuppeteer.launch({
-                channel: 'chrome',
+                ...(process.env.PUPPETEER_EXECUTABLE_PATH
+                  ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH }
+                  : { channel: 'chrome' }),
                 headless,
                 args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=en-US']
             }) as Browser;
@@ -83,9 +85,53 @@ export class GoogleMapsScraper {
         logger.info(`🔍 Searching: ${url}`);
         await this.page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
+        // Handle Google GDPR consent page (EU VPS IPs trigger this)
+        await this.handleConsentPage();
+
         // Simulate human behavior after navigation to reduce bot-detection risk
         if (this._stealthBrowser) {
             await this._stealthBrowser.simulateHuman(this.page!, 'high');
+        }
+    }
+
+    private async handleConsentPage() {
+        try {
+            const currentUrl = this.page!.url();
+            if (currentUrl.includes('consent.google.com')) {
+                logger.info('🍪 Google consent page detected, accepting...');
+                // Try multiple selectors for the "Accept all" button
+                const acceptSelectors = [
+                    'button[aria-label="Accept all"]',
+                    'form:last-of-type button',
+                    'button:has-text("Accept all")',
+                    '[data-ved] button',
+                ];
+                for (const sel of acceptSelectors) {
+                    try {
+                        const btn = await this.page!.$(sel);
+                        if (btn) {
+                            await btn.click();
+                            await this.page!.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 });
+                            logger.info('✅ Consent accepted, redirected to Maps');
+                            return;
+                        }
+                    } catch { /* try next selector */ }
+                }
+                // Fallback: click all buttons and find the right one by text
+                const buttons = await this.page!.$$('button');
+                for (const btn of buttons) {
+                    const text = await btn.evaluate((el: Element) => el.textContent?.trim() || '');
+                    if (text.toLowerCase().includes('accept')) {
+                        await btn.click();
+                        await this.page!.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+                        logger.info('✅ Consent accepted via text match');
+                        return;
+                    }
+                }
+                logger.warn('⚠️ Could not find consent accept button');
+            }
+        } catch (err) {
+            logger.warn('⚠️ Consent handling error (continuing):', err);
         }
     }
 

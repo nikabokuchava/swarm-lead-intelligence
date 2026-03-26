@@ -102,6 +102,18 @@ export async function scrapeEmailsFromWebsite(
     }
     baseUrl = baseUrl.replace(/\/$/, '');
 
+    // SEC: Validate protocol — reject javascript:, file:, data: schemes (SSRF/XSS prevention)
+    try {
+        const parsed = new URL(baseUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            result.error = `Invalid URL protocol: ${parsed.protocol}`;
+            return result;
+        }
+    } catch {
+        result.error = `Malformed URL: ${baseUrl}`;
+        return result;
+    }
+
     // Initialize tools
     const browser = providedBrowser || new StealthBrowser(); // Fallback if not provided
     const parser = new HybridParser();
@@ -125,7 +137,19 @@ export async function scrapeEmailsFromWebsite(
 
         while (urlsToVisit.length > 0 && pagesChecked < maxPages) {
             const targetUrl = urlsToVisit.shift()!;
-            
+
+            // SEC: Validate target URL protocol before navigation
+            try {
+                const targetParsed = new URL(targetUrl);
+                if (targetParsed.protocol !== 'http:' && targetParsed.protocol !== 'https:') {
+                    if (process.env.DEBUG) console.log(`[DeepCrawl] Skipping non-HTTP URL: ${targetUrl}`);
+                    continue;
+                }
+            } catch {
+                if (process.env.DEBUG) console.log(`[DeepCrawl] Skipping malformed URL: ${targetUrl}`);
+                continue;
+            }
+
             // Avoid duplicates
             if (visitedUrls.has(targetUrl)) continue;
             visitedUrls.add(targetUrl);
