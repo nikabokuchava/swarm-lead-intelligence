@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { getNextPendingLead, completeJob, failJobOrRetry, recoverStaleLocks } from './db/queue.js';
+import { getNextPendingLead, completeJob, failJobOrRetry, recoverStaleLocks, cancelOrphanedPendingRecords } from './db/queue.js';
 import { updateCompanyEmails, connectDB, disconnectDB } from './db/company.js';
 import { StealthBrowser } from './scraper/stealthBrowser.js';
 import { scrapeEmailsFromWebsite } from './scraper/websiteScraper.js';
@@ -33,6 +33,8 @@ async function runWorker() {
 
         // Recover any stale locks from crashed processes before starting
         await recoverStaleLocks();
+        // Cancel orphaned PENDING tasks/companies whose parent job already terminated
+        await cancelOrphanedPendingRecords();
 
         // Lightweight health check endpoint for container orchestrators (K8s, Docker)
         const healthPort = parseInt(process.env.WORKER_HEALTH_PORT || '8080', 10);
@@ -51,6 +53,7 @@ async function runWorker() {
         // Mutable browser — supports rotation and crash recovery
         let browser = await createBrowser();
         let jobCount = 0;
+        const isPremiumCache = new Map<string, boolean>(); // HI2: Cache isPremium by jobId
         logger.info('🌐 Stealth Browser initialized (Headless)');
 
         /** Gracefully close and re-launch the browser */
@@ -95,6 +98,13 @@ async function runWorker() {
                 await rotateBrowser('browser disconnected');
             }
 
+            // HI12: Pre-job heap check — rotate before OOM instead of after
+            const preJobHeap = process.memoryUsage().heapUsed;
+            if (preJobHeap > 400 * 1024 * 1024) {
+                await rotateBrowser(`Pre-job high memory (${(preJobHeap / 1024 / 1024).toFixed(0)}MB)`);
+                jobCount = 0;
+            }
+
             try {
                 // 1. Fetch Next Job — DB errors get dedicated reconnection handling
                 let job;
@@ -127,14 +137,19 @@ async function runWorker() {
                     continue;
                 }
 
-                // Resolve isPremium from parent ScrapeJob
+                // HI2: Resolve isPremium with cache to prevent N+1 queries
                 let isPremium = false;
                 if (job.jobId) {
-                    const parentJob = await prisma.scrapeJob.findUnique({
-                        where: { id: job.jobId },
-                        select: { isPremium: true }
-                    });
-                    isPremium = parentJob?.isPremium ?? false;
+                    if (isPremiumCache.has(job.jobId)) {
+                        isPremium = isPremiumCache.get(job.jobId)!;
+                    } else {
+                        const parentJob = await prisma.scrapeJob.findUnique({
+                            where: { id: job.jobId },
+                            select: { isPremium: true }
+                        });
+                        isPremium = parentJob?.isPremium ?? false;
+                        isPremiumCache.set(job.jobId, isPremium);
+                    }
                 }
 
                 // 2. Execute Deep Crawl
@@ -215,29 +230,36 @@ async function runWorker() {
 
                                 logger.info(`🔍 C-Level inference for ${person.name} (${person.role}): ${patterns.length} patterns`);
 
+                                // HI6: Chunked parallel inference (3 at a time) instead of sequential 1500ms
                                 let found = false;
-                                for (const candidateEmail of patterns) {
-                                    const verification = await verifyEmail(candidateEmail);
-                                    if (verification.status === 'VALID') {
-                                        verifiedDetails.push({
-                                            email: candidateEmail,
-                                            confidence: 99,
-                                            source: 'INFERENCE',
-                                            type: 'personal',
-                                            verificationStatus: verification.status,
-                                            mxProvider: verification.mxProvider,
-                                            isCLevel: true,
-                                            fullName: person.name,
-                                            title: person.role,
-                                        });
-                                        if (!result.allEmails.includes(candidateEmail)) {
-                                            result.allEmails.push(candidateEmail);
+                                const CLEVEL_CHUNK = 3;
+                                for (let i = 0; i < patterns.length && !found; i += CLEVEL_CHUNK) {
+                                    const chunk = patterns.slice(i, i + CLEVEL_CHUNK);
+                                    const results = await Promise.all(chunk.map(e => verifyEmail(e)));
+                                    for (let j = 0; j < results.length; j++) {
+                                        if (results[j].status === 'VALID') {
+                                            verifiedDetails.push({
+                                                email: chunk[j],
+                                                confidence: 99,
+                                                source: 'INFERENCE',
+                                                type: 'personal',
+                                                verificationStatus: results[j].status,
+                                                mxProvider: results[j].mxProvider,
+                                                isCLevel: true,
+                                                fullName: person.name,
+                                                title: person.role,
+                                            });
+                                            if (!result.allEmails.includes(chunk[j])) {
+                                                result.allEmails.push(chunk[j]);
+                                            }
+                                            logger.info(`✅ C-Level VALID: ${chunk[j]} for ${person.name}`);
+                                            found = true;
+                                            break;
                                         }
-                                        logger.info(`✅ C-Level VALID: ${candidateEmail} for ${person.name}`);
-                                        found = true;
-                                        break;
                                     }
-                                    await new Promise(r => setTimeout(r, 1500));
+                                    if (!found && i + CLEVEL_CHUNK < patterns.length) {
+                                        await new Promise(r => setTimeout(r, 1500));
+                                    }
                                 }
                                 if (!found) {
                                     logger.info(`❌ No valid pattern found for ${person.name}`);

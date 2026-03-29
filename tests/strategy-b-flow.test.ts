@@ -7,13 +7,17 @@ vi.mock('../src/db/prisma', () => {
             findFirst: vi.fn(),
             create: vi.fn(),
             count: vi.fn(),
+            update: vi.fn(),
         },
         scrapeJob: {
             update: vi.fn(),
         },
         scrapeTask: {
             count: vi.fn(),
-        }
+        },
+        contact: {
+            createMany: vi.fn(),
+        },
     };
 
     return {
@@ -50,13 +54,21 @@ vi.mock('../src/scraper/googleMapsScraper', () => ({
         init() { return Promise.resolve(); }
         search() { return Promise.resolve(); }
         collectResultLinks() { return Promise.resolve(['http://example.com/place']); }
-        extractDetails() { 
+        extractDetails() {
             return Promise.resolve({
                 name: 'Decoupled Tech LLC',
                 website: 'https://decoupledtech.com',
                 phone: '555-0100',
                 address: '123 Strategy Blvd'
-            }); 
+            });
+        }
+        extractDetailsOnPage() {
+            return Promise.resolve({
+                name: 'Decoupled Tech LLC',
+                website: 'https://decoupledtech.com',
+                phone: '555-0100',
+                address: '123 Strategy Blvd'
+            });
         }
         close() { return Promise.resolve(); }
     }
@@ -67,6 +79,8 @@ vi.mock('../src/scraper/stealthBrowser', () => ({
         launch() { return Promise.resolve(); }
         close() { return Promise.resolve(); }
         isConnected() { return true; }
+        createPage() { return Promise.resolve({}); }
+        closePage() { return Promise.resolve(); }
         openPagesCount = 1;
     }
 }));
@@ -203,7 +217,8 @@ describe('Strategy B: Map Scraping -> Database Queue -> Email Extraction Flow', 
 
         await updateCompanyEmails(job.id, result.allEmails, verifiedDetails, job.jobId);
 
-        expect(mockPrisma.company.update).toHaveBeenCalledWith({
+        // updateCompanyEmails runs inside prisma.$transaction → assertions against mockedTx
+        expect(mockedTx.company.update).toHaveBeenCalledWith({
             where: { id: mockCompanyId },
             data: expect.objectContaining({
                 emails: ['hello@decoupledtech.com'],
@@ -212,7 +227,7 @@ describe('Strategy B: Map Scraping -> Database Queue -> Email Extraction Flow', 
         });
 
         // The critical Relation Check functionality
-        expect(mockPrisma.contact.createMany).toHaveBeenCalledWith({
+        expect(mockedTx.contact.createMany).toHaveBeenCalledWith({
             skipDuplicates: true,
             data: [
                 expect.objectContaining({
@@ -240,7 +255,8 @@ describe('Strategy B: Map Scraping -> Database Queue -> Email Extraction Flow', 
             data: {
                 status: 'PENDING',
                 workerId: null,
-                lockedAt: null
+                lockedAt: null,
+                retries: { increment: 1 },
             }
         });
 

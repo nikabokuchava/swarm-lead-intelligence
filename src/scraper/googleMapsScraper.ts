@@ -288,4 +288,71 @@ export class GoogleMapsScraper {
             return { name, phone, website, address, rating, reviewCount };
         });
     }
+
+    /**
+     * HI11: Extract business details on a caller-provided page (enables parallel extraction).
+     * Same logic as extractDetails but operates on an explicit Page instead of this.page.
+     */
+    async extractDetailsOnPage(href: string, page: Page): Promise<GoogleMapsResult> {
+        logger.info(`👉 Processing (parallel): ${href}`);
+
+        // __name polyfill required for Google Maps evaluate
+        await page.evaluateOnNewDocument(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (globalThis as any).__name = (fn: unknown) => fn;
+        });
+
+        await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        if (this._stealthBrowser) {
+            await this._stealthBrowser.simulateHuman(page, 'medium');
+        }
+
+        try {
+            await page.waitForSelector('h1.DUwDvf', { timeout: 15000 });
+        } catch {
+            try {
+                await page.waitForSelector('h1', { timeout: 5000 });
+            } catch {
+                logger.warn('⚠️ Header not found, extraction might be partial.');
+            }
+        }
+
+        return await page.evaluate(() => {
+            const getText = (sel: string) => {
+                const el = document.querySelector(sel) as HTMLElement | null;
+                return el?.innerText?.trim() ?? '';
+            };
+
+            const name = getText('h1.DUwDvf') || getText('h1') || 'Unknown Name';
+
+            const ariaElements = Array.from(document.querySelectorAll('[aria-label]'));
+            const phoneEl = ariaElements.find(el => el.getAttribute('aria-label')?.includes('Phone:'));
+            const phone = phoneEl ? phoneEl.getAttribute('aria-label')!.replace('Phone:', '').trim() : null;
+
+            const addrEl = ariaElements.find(el => el.getAttribute('aria-label')?.includes('Address:'));
+            const address = addrEl ? addrEl.getAttribute('aria-label')!.replace('Address:', '').trim() : null;
+
+            const webEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement | null;
+            const website = webEl?.href ?? null;
+
+            const ratingEl = ariaElements.find(el => {
+                const label = el.getAttribute('aria-label') || '';
+                return /[\d.]+\s*star/i.test(label);
+            });
+            const ratingLabel = ratingEl?.getAttribute('aria-label') || '';
+            const ratingParsed = ratingLabel.match(/([\d.]+)\s*star/i);
+            const rating = ratingParsed ? parseFloat(ratingParsed[1]) : null;
+
+            const reviewEl = ariaElements.find(el => {
+                const label = el.getAttribute('aria-label') || '';
+                return /[\d,]+\s*review/i.test(label);
+            });
+            const reviewLabel = reviewEl?.getAttribute('aria-label') || '';
+            const reviewParsed = reviewLabel.match(/([\d,]+)\s*review/i);
+            const reviewCount = reviewParsed ? parseInt(reviewParsed[1].replace(/,/g, ''), 10) : null;
+
+            return { name, phone, website, address, rating, reviewCount };
+        });
+    }
 }

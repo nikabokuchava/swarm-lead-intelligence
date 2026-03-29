@@ -116,6 +116,7 @@ export async function scrapeEmailsFromWebsite(
 
     // Initialize tools
     const browser = providedBrowser || new StealthBrowser(); // Fallback if not provided
+    const isOwnedBrowser = !providedBrowser; // CR5: Track ownership for cleanup
     const parser = new HybridParser();
     
     const allFindings: { email: string; confidence: number; source: string; type?: string }[] = [];
@@ -213,6 +214,10 @@ export async function scrapeEmailsFromWebsite(
             try {
                 await page.close();
             } catch { /* ignore close errors */ }
+        }
+        // CR5: Close fallback browser to prevent Chromium zombies
+        if (isOwnedBrowser) {
+            try { await browser.close(); } catch { /* ignore close errors */ }
         }
     }
 

@@ -44,6 +44,7 @@ model Company {
   @@index([status, createdAt])
   @@index([userId])
   @@index([jobId])
+  @@index([name, address]) // HI3: Composite index for deduplication queries
   @@map("companies")
 }
 
@@ -89,6 +90,7 @@ model ScrapeJob {
   tasks        ScrapeTask[]
 
   @@index([userId])
+  @@index([userId, status]) // HI4: Composite index for SSE + polling queries
   @@map("scrape_jobs")
 }
 

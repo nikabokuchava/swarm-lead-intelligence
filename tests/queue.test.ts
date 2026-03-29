@@ -133,6 +133,7 @@ describe('Queue System', () => {
                     status: 'PENDING',
                     workerId: null,
                     lockedAt: null,
+                    retries: { increment: 1 },
                 },
             });
         });
@@ -159,6 +160,7 @@ describe('Queue System', () => {
                     status: 'PENDING',
                     workerId: null,
                     lockedAt: null,
+                    retries: { increment: 1 },
                 },
             });
 

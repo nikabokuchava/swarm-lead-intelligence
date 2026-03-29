@@ -1,16 +1,61 @@
 import { prisma } from './company.js';
 import { Company, ProcessingStatus } from '@prisma/client';
 
+/** Raw row shape from PostgreSQL RETURNING * (snake_case columns) */
+interface CompanyRawRow {
+    id: string;
+    user_id: string;
+    name: string;
+    website: string | null;
+    phone: string | null;
+    address: string | null;
+    source: string | null;
+    rating: number | null;
+    review_count: number | null;
+    emails: string[];
+    email_scraped: boolean;
+    email_scraped_at: Date | null;
+    status: string;
+    worker_id: string | null;
+    locked_at: Date | null;
+    retries: number;
+    job_id: string | null;
+    created_at: Date;
+}
+
+/** Map snake_case raw row to camelCase Prisma Company type */
+function mapRawToCompany(row: CompanyRawRow): Company {
+    return {
+        id: row.id,
+        userId: row.user_id,
+        name: row.name,
+        website: row.website,
+        phone: row.phone,
+        address: row.address,
+        source: row.source,
+        rating: row.rating,
+        reviewCount: row.review_count,
+        emails: Array.isArray(row.emails) ? row.emails : [],
+        emailScraped: row.email_scraped,
+        emailScrapedAt: row.email_scraped_at,
+        status: row.status as ProcessingStatus,
+        workerId: row.worker_id,
+        lockedAt: row.locked_at,
+        retries: row.retries,
+        jobId: row.job_id,
+        createdAt: row.created_at,
+    };
+}
+
 /**
  * Get next pending lead using SKIP LOCKED for safe concurrency.
+ * HI13: Single-query with RETURNING * — eliminates second findUnique round-trip.
  * @param workerId - Unique ID of the worker claiming the job
  * @returns The locked Company record or null if no jobs available
  */
 export async function getNextPendingLead(workerId: string): Promise<Company | null> {
     try {
-        // Use raw query for SKIP LOCKED functionality which isn't natively supported in Prisma Client yet
-        // Only return the id — then use Prisma findUnique to get properly mapped camelCase fields
-        const result = await prisma.$queryRaw<{ id: string }[]>`
+        const rows = await prisma.$queryRaw<CompanyRawRow[]>`
             UPDATE "companies"
             SET status = 'PROCESSING'::"ProcessingStatus",
                 "worker_id" = ${workerId},
@@ -23,18 +68,21 @@ export async function getNextPendingLead(workerId: string): Promise<Company | nu
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING id;
+            RETURNING *;
         `;
 
-        const rows = result as unknown as { id: string }[];
-
         if (rows && rows.length > 0) {
-            // Re-fetch via Prisma to get proper camelCase field mapping (jobId, workerId, etc.)
-            return await prisma.company.findUnique({ where: { id: rows[0].id } });
+            return mapRawToCompany(rows[0]);
         }
 
         return null;
     } catch (error) {
+        // HI1: Re-throw connection errors so worker's reconnection logic triggers
+        const prismaError = error as { code?: string };
+        if (prismaError.code === 'P1001' || prismaError.code === 'P1017' || prismaError.code === 'P2024' ||
+            (error instanceof Error && error.message.toLowerCase().includes('connect'))) {
+            throw error;
+        }
         console.error('Error fetching next job:', error);
         return null;
     }
@@ -113,6 +161,46 @@ export async function recoverStaleLocks(timeoutMinutes = 10): Promise<{ tasks: n
 
     if (taskResult.count > 0 || companyResult.count > 0) {
         console.log(`🔓 Recovered stale locks: ${taskResult.count} tasks, ${companyResult.count} companies reset to PENDING`);
+    }
+
+    return { tasks: taskResult.count, companies: companyResult.count };
+}
+
+/**
+ * Cancel orphaned PENDING tasks/companies whose parent ScrapeJob is already FAILED or COMPLETED.
+ * Prevents zombie PENDING records from accumulating when a job terminates without cleaning up children.
+ */
+export async function cancelOrphanedPendingRecords(): Promise<{ tasks: number; companies: number }> {
+    const terminatedJobIds = await prisma.scrapeJob.findMany({
+        where: { status: { in: ['FAILED', 'COMPLETED'] } },
+        select: { id: true }
+    });
+
+    if (terminatedJobIds.length === 0) {
+        return { tasks: 0, companies: 0 };
+    }
+
+    const ids = terminatedJobIds.map(j => j.id);
+
+    const [taskResult, companyResult] = await Promise.all([
+        prisma.scrapeTask.updateMany({
+            where: {
+                jobId: { in: ids },
+                status: 'PENDING'
+            },
+            data: { status: 'FAILED' }
+        }),
+        prisma.company.updateMany({
+            where: {
+                jobId: { in: ids },
+                status: 'PENDING'
+            },
+            data: { status: 'FAILED' }
+        })
+    ]);
+
+    if (taskResult.count > 0 || companyResult.count > 0) {
+        console.log(`🧹 Orphan cleanup: ${taskResult.count} tasks, ${companyResult.count} companies marked FAILED (parent job terminated)`);
     }
 
     return { tasks: taskResult.count, companies: companyResult.count };

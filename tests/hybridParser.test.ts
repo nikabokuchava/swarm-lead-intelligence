@@ -224,7 +224,7 @@ describe('HybridParser', () => {
             }
         });
 
-        process.env.OPENAI_API_KEY = 'test-key';
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY = 'test-key';
         const html = '<p>Nothing interesting here, leaving it to LLM</p>';
         const result = await parser.extract(html, true);
 

@@ -19,6 +19,10 @@ vi.mock('../src/services/scraperService.js', () => ({
     processJob: mockProcessJob
 }));
 
+vi.mock('../src/services/jobPoller.js', () => ({
+    startPolling: vi.fn().mockResolvedValue(undefined)
+}));
+
 const mockCreateJob = vi.fn().mockResolvedValue({ id: 'job-123' });
 const mockCreateTask = vi.fn().mockResolvedValue({ id: 'task-456' });
 

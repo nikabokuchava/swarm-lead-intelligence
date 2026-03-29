@@ -65,18 +65,44 @@ export async function processJob(taskId: string, headlessMode: boolean = true, e
         let skipped = 0;
 
         // D1: Use atomic counter instead of expensive COUNT(*) per link
-        let baselineCount = job.resultsFound || 0;
+        const baselineCount = job.resultsFound || 0;
 
-        for (const link of links) {
-            // Check quota BEFORE processing each lead using local counter
+        // HI11: Chunked parallel extraction — 3 concurrent pages instead of sequential
+        const EXTRACT_CHUNK = 3;
+        let quotaReached = false;
+
+        for (let i = 0; i < links.length && !quotaReached; i += EXTRACT_CHUNK) {
+            // Check quota BEFORE processing each chunk
             if (job.maxResults && (baselineCount + added) >= job.maxResults) {
                 logger.info(`🛑 Quota reached (${baselineCount + added}/${job.maxResults}) for Job ${job.id}. Stopping task ${taskId}.`);
                 break;
             }
 
+            const chunk = links.slice(i, i + EXTRACT_CHUNK);
+            const pages: Awaited<ReturnType<StealthBrowser['createPage']>>[] = [];
+
             try {
-                const details = await scraper.extractDetails(link);
-                if (details.name !== 'Unknown Name') {
+                // Create dedicated pages for this chunk
+                for (let ci = 0; ci < chunk.length; ci++) {
+                    pages.push(await sharedBrowser!.createPage());
+                }
+
+                // Extract details in parallel across separate pages
+                const results = await Promise.all(
+                    chunk.map((link, idx) =>
+                        scraper!.extractDetailsOnPage(link, pages[idx])
+                            .catch(err => { logger.error(`❌ extraction failed for ${link}`, err); return null; })
+                    )
+                );
+
+                // Process DB writes sequentially (preserves quota accuracy)
+                for (const details of results) {
+                    if (!details || details.name === 'Unknown Name') continue;
+                    if (job.maxResults && (baselineCount + added) >= job.maxResults) {
+                        quotaReached = true;
+                        break;
+                    }
+
                     const result = await createCompanyIfNotExists({
                         name: details.name,
                         phone: details.phone,
@@ -94,11 +120,13 @@ export async function processJob(taskId: string, headlessMode: boolean = true, e
                     } else {
                         added++;
                         logger.info(`✅ Added: ${details.name}`);
-                        // Company remains PENDING — background worker handles email extraction
                     }
                 }
-            } catch (err) {
-                logger.error(`❌ extraction failed for ${link}`, err);
+            } finally {
+                // Close all pages in this chunk to prevent Chromium memory leaks
+                for (const p of pages) {
+                    await sharedBrowser!.closePage(p);
+                }
             }
         }
 

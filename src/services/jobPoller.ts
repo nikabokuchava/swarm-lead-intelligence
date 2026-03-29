@@ -1,5 +1,5 @@
 import { prisma } from '../db/company.js';
-import { recoverStaleLocks } from '../db/queue.js';
+import { recoverStaleLocks, cancelOrphanedPendingRecords } from '../db/queue.js';
 import { processJob } from './scraperService.js';
 import { config } from '../config/index.js';
 import { StealthBrowser } from '../scraper/stealthBrowser.js';
@@ -60,6 +60,8 @@ export async function startPolling() {
 
     // Recover any stale locks from crashed processes before polling
     await recoverStaleLocks();
+    // Cancel orphaned PENDING tasks/companies whose parent job already terminated
+    await cancelOrphanedPendingRecords();
 
     let consecutiveFailures = 0;
     let isShuttingDown = false;

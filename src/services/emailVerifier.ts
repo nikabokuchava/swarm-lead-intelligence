@@ -29,6 +29,12 @@ const PROBE_FROM = `ping@${HELO_DOMAIN}`;
 
 const DOMAIN_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
 
+/** CR1: Reject SMTP command injection characters (\r, \n, <, >) and validate RFC 5321 structure */
+const SAFE_EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+function isSmtpSafeEmail(email: string): boolean {
+    return SAFE_EMAIL_RE.test(email) && !email.includes('\r') && !email.includes('\n');
+}
+
 /** T1: Domain-level MX cache — avoids redundant DNS + catch-all probes for same domain */
 interface MxCacheEntry {
     primaryMx: string;
@@ -48,7 +54,12 @@ export function clearMxCache(): void {
  */
 export async function getMxInfo(domain: string): Promise<MxCacheEntry | null> {
     const cached = mxCache.get(domain);
-    if (cached) return cached;
+    if (cached) {
+        // LRU refresh: delete + re-set moves entry to end of insertion order
+        mxCache.delete(domain);
+        mxCache.set(domain, cached);
+        return cached;
+    }
 
     const mxRecords = await dnsResolver.resolveMx(domain);
     if (!mxRecords || mxRecords.length === 0) return null;
@@ -58,6 +69,14 @@ export async function getMxInfo(domain: string): Promise<MxCacheEntry | null> {
     const isCatchAll = await isCatchAllDomain(domain, primaryMx);
 
     const entry: MxCacheEntry = { primaryMx, provider, isCatchAll };
+    // CR2: LRU eviction — delete oldest 1000 entries instead of nuking entire cache
+    if (mxCache.size >= 5000) {
+        const iter = mxCache.keys();
+        for (let i = 0; i < 1000; i++) {
+            const key = iter.next().value;
+            if (key !== undefined) mxCache.delete(key);
+        }
+    }
     mxCache.set(domain, entry);
     return entry;
 }
@@ -93,6 +112,10 @@ function generateGarbageLocal(): string {
  * NEVER sends the DATA command — this is a pure address probe.
  */
 export function probeSmtp(email: string, mxExchange: string): Promise<SmtpProbeResult> {
+    // CR1: Defense-in-depth — reject injection characters before SMTP write
+    if (!isSmtpSafeEmail(email)) {
+        return Promise.resolve({ code: null, status: 'INVALID' as const, error: 'Failed SMTP safety validation' });
+    }
     return new Promise((resolve) => {
         const socket = new Socket();
         let buffer = '';
@@ -215,6 +238,11 @@ export async function verifyEmail(email: string): Promise<EmailVerificationResul
     // LOCAL_DEMO_MODE: skip ALL verification (DNS rate-limits block Port 25 on consumer ISPs)
     if (process.env.LOCAL_DEMO_MODE === 'true') {
         return { status: 'VALID', confidence: 99, mxProvider: 'Google Workspace (Demo)' };
+    }
+
+    // CR1: Reject injection characters before any processing
+    if (!isSmtpSafeEmail(email)) {
+        return { status: 'INVALID', confidence: 0, error: 'Failed safety validation' };
     }
 
     const domain = email.split('@')[1];
