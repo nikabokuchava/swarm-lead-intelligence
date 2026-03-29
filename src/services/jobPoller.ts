@@ -139,20 +139,13 @@ export async function startPolling() {
 
                     logger.info(`✨ Claimed Task: ${task.id} - "${task.query}" (Zip: ${task.zipCode || 'NONE'})`);
 
-                    // Check quota via atomic counter (no expensive COUNT query)
+                    // Check quota — skip this task but DON'T nuke remaining PENDING tasks
+                    // (maxResults might be increased later, so leave siblings recoverable)
                     if (task.scrapeJob?.maxResults && task.scrapeJob.resultsFound >= task.scrapeJob.maxResults) {
-                        logger.info(`🛑 Quota reached for Job ${task.jobId} (${task.scrapeJob.resultsFound}/${task.scrapeJob.maxResults}). Cancelling remaining tasks.`);
-                        await prisma.scrapeTask.updateMany({
-                            where: {
-                                jobId: task.jobId,
-                                status: 'PENDING'
-                            },
-                            data: { status: 'FAILED' }
-                        });
-                        // Also mark this already-claimed task
+                        logger.info(`🛑 Quota reached for Job ${task.jobId} (${task.scrapeJob.resultsFound}/${task.scrapeJob.maxResults}). Skipping task ${taskId}.`);
                         await prisma.scrapeTask.update({
                             where: { id: taskId },
-                            data: { status: 'FAILED' }
+                            data: { status: 'COMPLETED' }
                         });
                         continue;
                     }

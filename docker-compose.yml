@@ -5,7 +5,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: swarm_postgres
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_USER: swarm
       POSTGRES_PASSWORD: swarm_secret
@@ -27,7 +27,7 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     container_name: swarm_worker
-    restart: unless-stopped
+    restart: always
     shm_size: '2gb'
     env_file: .env
     depends_on:
