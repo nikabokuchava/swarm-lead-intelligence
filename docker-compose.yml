@@ -40,6 +40,8 @@ services:
       LOG_FILE: /app/logs/worker.log
       MAX_RESULTS: '50'
       SCROLL_DELAY_MS: '1200'
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
     volumes:
       - worker_logs:/app/logs
 
