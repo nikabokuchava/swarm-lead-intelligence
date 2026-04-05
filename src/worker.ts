@@ -143,6 +143,8 @@ async function runWorker() {
                     if (isPremiumCache.has(job.jobId)) {
                         isPremium = isPremiumCache.get(job.jobId)!;
                     } else {
+                        // P0: Evict cache before unbounded growth
+                        if (isPremiumCache.size >= 1000) isPremiumCache.clear();
                         const parentJob = await prisma.scrapeJob.findUnique({
                             where: { id: job.jobId },
                             select: { isPremium: true }

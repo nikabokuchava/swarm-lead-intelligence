@@ -71,10 +71,9 @@ export async function getMxInfo(domain: string): Promise<MxCacheEntry | null> {
     const entry: MxCacheEntry = { primaryMx, provider, isCatchAll };
     // CR2: LRU eviction — delete oldest 1000 entries instead of nuking entire cache
     if (mxCache.size >= 5000) {
-        const iter = mxCache.keys();
-        for (let i = 0; i < 1000; i++) {
-            const key = iter.next().value;
-            if (key !== undefined) mxCache.delete(key);
+        const keysToEvict = Array.from(mxCache.keys()).slice(0, 1000);
+        for (const key of keysToEvict) {
+            mxCache.delete(key);
         }
     }
     mxCache.set(domain, entry);
