@@ -21,9 +21,7 @@ const lastTask = job.tasks[job.tasks.length - 1];
 const endTime = job.completedAt ?? lastTask?.createdAt ?? new Date();
 
 // Per-task breakdown
-let totalSkipped = 0;
 for (const task of job.tasks) {
-  // Count skipped by looking at task log — we can infer from the total
   console.log(`  Task ${task.id.slice(0, 8)} | zip: ${task.zipCode} | status: ${task.status} | retries: ${task.retries}`);
 }
 
