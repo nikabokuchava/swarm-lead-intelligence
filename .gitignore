@@ -40,6 +40,10 @@ docs/*INDIEHACKERS*.md
 docs/*REVIEW*.md
 docs/*PROMPT*.md
 
+# Internal docs (not for public)
+docs/WORKER_DIAGNOSIS.md
+docs/architecture-zipcode-brainstorm.md
+
 # Outreach / client data (never commit)
 day3-followups-ready.md
 generate-sample-csv.md
