@@ -239,4 +239,4 @@ Most common causes: missing `.env` file, invalid `DATABASE_URL`, Prisma migratio
 
 ---
 
-> **Next step:** Open `docs/TRUTH-MATRIX.md` to confirm capability claims after VPS deployment with Port 25 open.
+> **Next step:** See the [README](../README.md) for the project's scope, limitations, and what is verifiable in this repo.
