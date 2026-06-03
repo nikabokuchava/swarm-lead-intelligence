@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HybridParser } from '../src/utils/hybridParser';
-import { generateObject } from 'ai';
 
 vi.mock('ai', () => ({
     generateObject: vi.fn(),

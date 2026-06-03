@@ -263,7 +263,8 @@ describe('Strategy B: Map Scraping -> Database Queue -> Email Extraction Flow', 
         await failJobOrRetry(mockCompanyId, 3, 'Fatal WebGL crash');
         expect(mockPrisma.company.update).toHaveBeenCalledWith({
             where: { id: mockCompanyId },
-            data: { status: 'FAILED' }
+            // Hard-fail also persists failureReason/failedAt (see failure-persistence.test.ts).
+            data: expect.objectContaining({ status: 'FAILED' })
         });
     });
 });

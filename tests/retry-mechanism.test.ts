@@ -83,7 +83,8 @@ describe('Retry Mechanism in scraperService', () => {
         expect(result.success).toBe(false);
         expect(mockPrisma.scrapeTask.update).toHaveBeenCalledWith({
             where: { id: 'task-2' },
-            data: { status: 'FAILED' }
+            // Hard-fail also persists failureReason/failedAt (see failure-persistence.test.ts).
+            data: expect.objectContaining({ status: 'FAILED' })
         });
     });
 });

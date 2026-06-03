@@ -4,10 +4,15 @@ import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { getOrCreateUser } from '@/lib/user';
-// DaaS mode: rate limiting and credit checks disabled
+import { checkRateLimit } from '@/lib/rateLimit';
+
+// Server-side hardening caps — auditable, not reliant on UI input limits.
+const MAX_RESULTS = 500;      // hard cap on leads per job (UI max is advisory only)
+const MAX_TASKS = 100;        // cap on zip-code task fan-out per job
+const MAX_JOBS_PER_MIN = 20;  // job-creation rate limit per user
 
 export async function createScrapeJob(formData: FormData) {
-  // 
+  //
   const { userId } = await auth();
   const clerkUser = await currentUser();
 
@@ -15,23 +20,31 @@ export async function createScrapeJob(formData: FormData) {
     throw new Error("Unauthorized: You must be logged in to create a job.");
   }
 
-  // DaaS mode: no rate limiting or credit checks
+  // Abuse/cost guard: rate-limit job creation per user before any DB work.
+  if (!checkRateLimit(`job-create:${userId}`, MAX_JOBS_PER_MIN).allowed) {
+    throw new Error('Too many jobs created. Please wait a minute and try again.');
+  }
+
   const email = clerkUser.emailAddresses[0]?.emailAddress ?? '';
   await getOrCreateUser(userId, email);
 
   const query = formData.get('query') as string;
-  const maxResults = Number(formData.get('maxResults')) || 20;
+  // Clamp maxResults to a safe server-side range (negative/0/NaN -> default 20).
+  const rawMaxResults = Number(formData.get('maxResults'));
+  const maxResults = Number.isFinite(rawMaxResults) && rawMaxResults > 0
+    ? Math.min(Math.floor(rawMaxResults), MAX_RESULTS)
+    : 20;
   const zipCodesRaw = formData.get('zipCodes') as string | null;
-  const isPremium = formData.get('isPremium') === 'on';
 
   if (!query || query.trim() === '') {
     throw new Error('Query is required');
   }
 
-  // Parse zip codes from comma separated list
-  const zipCodes = zipCodesRaw
+  // Parse zip codes from comma separated list, then cap task fan-out.
+  const zipCodes = (zipCodesRaw
     ? zipCodesRaw.split(',').map(z => z.trim()).filter(Boolean)
-    : [];
+    : []
+  ).slice(0, MAX_TASKS);
 
   // 2. ვქმნით ჯობს კონკრეტული userId-ით
   try {
@@ -40,7 +53,9 @@ export async function createScrapeJob(formData: FormData) {
       data: {
         query,
         maxResults,
-        isPremium,
+        // Entitlement is NOT trusted from the client. No server-side entitlement
+        // source exists yet, so default to the safe/free path (no paid C-Level enrichment).
+        isPremium: false,
         status: 'PROCESSING', // Parent immediately PROCESSING
         userId: userId, // <---
         tasks: {

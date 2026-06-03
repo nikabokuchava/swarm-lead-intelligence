@@ -183,7 +183,7 @@ Same as Option 1 — `ON CONFLICT` on `(name, address)` scoped to `jobId`.
 ### Cons
 | # | Con |
 |---|-----|
-| 1 | **Performance at scale** — COUNT(*) on Company table for every lead insertion is O(N). At 1000+ leads, this becomes measurable latency |
+| 1 | **Performance under load** — COUNT(*) on Company table for every lead insertion is O(N). At 1000+ leads, this becomes measurable latency |
 | 2 | **Race window** — two workers both COUNT = 999, both insert, final count = 1001 (overshoot by ~worker_count) |
 | 3 | **Index required** — must add index on `Company(jobId)` to keep COUNT fast (already exists but verify) |
 | 4 | **No real-time progress** without polling COUNT repeatedly from dashboard |
