@@ -30,7 +30,7 @@ import { prisma } from '@/lib/db';
 
 const mockPrisma = vi.mocked(prisma);
 
-// Desired hardening caps (encoded by these tests; implementation lands in a later pass).
+// Hardening caps enforced by the server action (see dashboard/src/app/actions.ts).
 const MAX_RESULTS_CAP = 500;
 const MAX_TASKS_CAP = 100;
 const JOB_RATE_LIMIT_PER_MIN = 20;
@@ -61,7 +61,7 @@ describe('createScrapeJob hardening', () => {
         });
 
         it('never persists a negative maxResults', async () => {
-            // `Number('-5') || 20` === -5, so the current code stores a negative value.
+            // A negative maxResults must be coerced to a safe minimum (>= 1), not stored as-is.
             await createScrapeJob(makeFormData({ query: 'plumbers', maxResults: '-5' }));
             expect(lastCreateData().maxResults).toBeGreaterThanOrEqual(1);
         });
@@ -110,9 +110,8 @@ describe('createScrapeJob hardening', () => {
             expect((mockPrisma.scrapeJob.create as any).mock.calls.length).toBe(
                 createCountBefore
             );
-            // NOTE: the only existing rate limit (checkRateLimit in
-            // dashboard/src/app/api/stripe/checkout/route.ts) guards Stripe checkout,
-            // NOT job creation — so it does not satisfy this requirement.
+            // createScrapeJob enforces this via checkRateLimit(`job-create:${userId}`,
+            // MAX_JOBS_PER_MIN) before any DB write (dashboard/src/app/actions.ts).
         });
     });
 });

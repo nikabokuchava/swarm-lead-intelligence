@@ -26,7 +26,7 @@ Swarm is a multi-tenant lead-enrichment SaaS proof-of-work project built with Ne
 |------------|-----|
 | **Public business-data collection** | Puppeteer-driven collection of publicly listed business fields (name, phone, address, website, ratings/reviews). |
 | **Email discovery** | Regex-first extraction with an optional structured-LLM fallback (40K-token context). Confidence scores clamped 0–100. |
-| **Email validation** | DNS MX lookup, MX-provider identification, and catch-all detection — domain-level plausibility, **not** mailbox-level deliverability. |
+| **Email validation** | DNS/MX validation (MX lookup, provider identification, catch-all detection) with optional SMTP probing where available. `VALID` is a validation result, not a delivery guarantee. |
 | **Optional contact inference** | For enrichment, an LLM extracts owner/founder names from crawled public pages and generates candidate email patterns to validate. |
 
 ---
@@ -38,7 +38,7 @@ Swarm is a multi-tenant lead-enrichment SaaS proof-of-work project built with Ne
 - **Credits:** Stripe checkout and an idempotent webhook top up a credit balance, but **runtime credit consumption is intentionally disabled / out of scope** — running a job does not deduct credits.
 - **Rate limiting is per-process** (in-memory sliding window), **not distributed** — it does not coordinate across multiple instances.
 - **Tests are unit-level with mocked Prisma** — they verify logic and hardening invariants, not load or real-concurrency behavior.
-- **Email validation is DNS/MX-level**, not SMTP mailbox verification. **No claim of deliverability or hit-rate percentages is made.**
+- **Email validation** uses DNS/MX validation with optional SMTP probing where available. `VALID` is a validation result, not a delivery guarantee. **No deliverability or hit-rate percentage is claimed.**
 - **Data collection** depends on third-party page structure and can break when those pages change. Respect each site's terms of use and applicable law before collecting data.
 
 ---
@@ -137,6 +137,8 @@ npm install --prefix dashboard
 npx prisma migrate dev
 ```
 
+> **Fresh vs. existing databases:** A brand-new database is set up with `npx prisma migrate deploy` (applies the full migration history cleanly). A database that previously received schema changes via `prisma db push` may report drift on the `20260603111834_reconcile_schema_drift` migration; baseline it with `npx prisma migrate resolve --applied 20260603111834_reconcile_schema_drift`. **Verify the existing schema first — do not run this blindly.**
+
 ### 4. Run
 
 ```bash
@@ -169,7 +171,7 @@ cp .env.example .env   # fill in your credentials
 docker compose -f docker-compose.yml up --build -d
 ```
 
-> **Note on email validation:** Validation runs at the DNS/MX level (MX lookup + catch-all detection), not mailbox-level SMTP verification. Many networks block outbound SMTP (port 25), so the worker does not depend on it and records `UNKNOWN` when a deeper check is not possible.
+> **Note on email validation:** Validation uses DNS/MX checks (MX lookup + catch-all detection) with optional SMTP probing where available. Many networks block outbound SMTP (port 25), so the worker does not depend on it and records `UNKNOWN` as a conservative fallback. `VALID` is a validation result, not a delivery guarantee.
 
 See the [VPS Deployment Guide](docs/VPS-DEPLOYMENT.md) for full instructions.
 

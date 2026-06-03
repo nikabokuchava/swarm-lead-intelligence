@@ -48,3 +48,7 @@ generate-sample-csv.md
 .next/
 .vscode/
 samples/
+.gitnexus
+
+# Local AI-agent config (not part of the PR)
+CLAUDE.md
