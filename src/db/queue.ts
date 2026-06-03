@@ -19,6 +19,8 @@ interface CompanyRawRow {
     worker_id: string | null;
     locked_at: Date | null;
     retries: number;
+    failure_reason: string | null;
+    failed_at: Date | null;
     job_id: string | null;
     created_at: Date;
 }
@@ -42,6 +44,8 @@ function mapRawToCompany(row: CompanyRawRow): Company {
         workerId: row.worker_id,
         lockedAt: row.locked_at,
         retries: row.retries,
+        failureReason: row.failure_reason,
+        failedAt: row.failed_at,
         jobId: row.job_id,
         createdAt: row.created_at,
     };
@@ -209,14 +213,18 @@ export async function cancelOrphanedPendingRecords(): Promise<{ tasks: number; c
 /**
  * Handle job failure: retry if under limit, fail otherwise.
  */
-export async function failJobOrRetry(companyId: string, currentRetries: number, _errorMessage?: string) {
+export async function failJobOrRetry(companyId: string, currentRetries: number, errorMessage?: string) {
     const MAX_RETRIES = 3;
-    
+
     if (currentRetries >= MAX_RETRIES) {
-        // Hard fail
+        // Hard fail — persist the reason + timestamp so failures aren't silently discarded.
         await prisma.company.update({
             where: { id: companyId },
-            data: { status: 'FAILED' }
+            data: {
+                status: 'FAILED',
+                failureReason: errorMessage ?? null,
+                failedAt: new Date(),
+            }
         });
     } else {
         // Release back to queue with atomic retry increment
