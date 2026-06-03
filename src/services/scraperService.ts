@@ -175,7 +175,11 @@ export async function processJob(taskId: string, headlessMode: boolean = true, e
         } else {
             await prisma.scrapeTask.update({
                 where: { id: taskId },
-                data: { status: 'FAILED' }
+                data: {
+                    status: 'FAILED',
+                    failureReason: error instanceof Error ? error.message : String(error),
+                    failedAt: new Date(),
+                }
             });
         }
         return { success: false, error };

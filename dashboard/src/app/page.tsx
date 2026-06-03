@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, Sparkles, Zap, TrendingUp, Building2, Gift, Search, Database, Download, Star, ChevronDown, Map, ShieldCheck, Clock } from "lucide-react";
+import { ArrowRight, Check, Sparkles, Zap, TrendingUp, Building2, Gift, Search, Database, Download, Star, ChevronDown } from "lucide-react";
 import { MockTerminal } from "@/components/MockTerminal";
 import { BentoGrid } from "@/components/landing/BentoGrid";
 import { motion, AnimatePresence } from "framer-motion";

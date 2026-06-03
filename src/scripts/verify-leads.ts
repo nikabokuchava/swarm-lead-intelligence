@@ -67,7 +67,7 @@ async function main() {
 
                 updated++;
                 bar.increment({ status: `Verifying: ${contact.workEmail}` });
-            } catch (err) {
+            } catch {
                 // In case of DB error or other unexpected issues
                 // VerifyEmail service already handles DNS errors gracefully
                 bar.increment({ status: `Error: ${contact.workEmail}` });

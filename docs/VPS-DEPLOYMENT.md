@@ -1,6 +1,6 @@
 # VPS Production Deployment Guide
 
-Deploy the Swarm scraper worker to a Ubuntu 24.04 VPS with Port 25 open for full SMTP email verification.
+Deploy the Swarm scraper worker to a Ubuntu 24.04 VPS. With outbound Port 25 open, the worker can attempt optional SMTP probing during email validation, in addition to its DNS/MX checks, where network/provider conditions allow.
 
 ---
 
@@ -11,7 +11,7 @@ Deploy the Swarm scraper worker to a Ubuntu 24.04 VPS with Port 25 open for full
 - SSH access as root or a sudo user
 - Your `.env` file ready locally with all secrets filled in
 
-> **Why VPS?** Your local ISP blocks Port 25, causing all SMTP `RCPT TO` checks to time out. A VPS with Port 25 open enables real deliverability verification — the difference between 30% confidence `UNKNOWN` and 90% confidence `VALID`.
+> **Why VPS?** Many consumer ISPs block outbound Port 25, so SMTP `RCPT TO` probes time out and validation falls back to `UNKNOWN`. A VPS with Port 25 open lets the worker attempt optional SMTP probing alongside its DNS/MX validation. `VALID` means an address passed validation checks — it is not a guarantee of inbox delivery; `UNKNOWN` is a normal, conservative fallback.
 
 ---
 
@@ -78,7 +78,7 @@ sudo ufw --force enable
 sudo ufw status
 ```
 
-> **Port 25:** Ubuntu 24.04 VPS providers (DigitalOcean, Hetzner) allow Port 25 by default. Some require you to open a support ticket to enable outbound SMTP. Check your provider's documentation if SMTP verification still fails.
+> **Port 25:** Ubuntu 24.04 VPS providers (DigitalOcean, Hetzner) allow Port 25 by default. Some require you to open a support ticket to enable outbound SMTP. Check your provider's documentation if SMTP probing still fails.
 
 ---
 
@@ -188,7 +188,7 @@ From inside the running container:
 docker compose exec scraper-worker bash -c "apt-get install -y netcat-openbsd 2>/dev/null; nc -zv smtp.gmail.com 25"
 ```
 
-If it connects, SMTP verification is fully operational. If it times out, contact your VPS provider to enable outbound Port 25.
+If it connects, outbound Port 25 is open and optional SMTP probing can be attempted. If it times out, contact your VPS provider to enable outbound Port 25.
 
 ---
 
@@ -233,10 +233,10 @@ Most common causes: missing `.env` file, invalid `DATABASE_URL`, Prisma migratio
 - Ensure `postgres` is healthy: `docker compose ps`
 - The `DATABASE_URL` inside the container must point to `postgres` (the service name), not `localhost`
 
-### SMTP still returning UNKNOWN on VPS
+### Validation still returning UNKNOWN on VPS
 - Test Port 25: `nc -zv smtp.gmail.com 25` from inside the container
 - Contact your VPS provider (DigitalOcean: submit abuse form; Hetzner: enabled by default on non-residential plans)
 
 ---
 
-> **Next step:** Open `docs/TRUTH-MATRIX.md` to confirm capability claims after VPS deployment with Port 25 open.
+> **Next step:** See the [README](../README.md) for the project's scope, limitations, and what is verifiable in this repo.

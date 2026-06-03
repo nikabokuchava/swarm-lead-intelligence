@@ -145,7 +145,8 @@ describe('Queue System', () => {
 
             expect(mockPrisma.company.update).toHaveBeenCalledWith({
                 where: { id: 'company-1' },
-                data: { status: 'FAILED' },
+                // Hard-fail also persists failureReason/failedAt (see failure-persistence.test.ts).
+                data: expect.objectContaining({ status: 'FAILED' }),
             });
         });
 
@@ -170,7 +171,7 @@ describe('Queue System', () => {
             await failJobOrRetry('company-x', 3);
             expect(mockPrisma.company.update).toHaveBeenCalledWith({
                 where: { id: 'company-x' },
-                data: { status: 'FAILED' },
+                data: expect.objectContaining({ status: 'FAILED' }),
             });
         });
 
@@ -181,7 +182,7 @@ describe('Queue System', () => {
 
             expect(mockPrisma.company.update).toHaveBeenCalledWith({
                 where: { id: 'company-1' },
-                data: { status: 'FAILED' },
+                data: expect.objectContaining({ status: 'FAILED' }),
             });
         });
     });

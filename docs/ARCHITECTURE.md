@@ -56,9 +56,9 @@ People associated with the company (if extracted).
 
 The collector (`src/scraper/`) employs a Hybrid Strategy for maximum reliability.
 
-### 1. Stealth Browser
+### 1. Browser Automation
 
-Uses `puppeteer-extra-plugin-stealth` to evade bot detection. It mimics real user behavior (mouse movements, random delays).
+Uses Puppeteer (via the `puppeteer-extra` ecosystem) to render and read public pages reliably. It adds randomized delays between actions to keep request rates polite and avoid overloading target sites.
 
 ### 2. Extraction Pipeline
 
