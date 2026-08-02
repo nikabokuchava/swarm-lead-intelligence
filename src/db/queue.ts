@@ -171,12 +171,14 @@ export async function recoverStaleLocks(timeoutMinutes = 10): Promise<{ tasks: n
 }
 
 /**
- * Cancel orphaned PENDING tasks/companies whose parent ScrapeJob is already FAILED or COMPLETED.
- * Prevents zombie PENDING records from accumulating when a job terminates without cleaning up children.
+ * Cancel orphaned PENDING tasks/companies whose parent ScrapeJob is FAILED.
+ * COMPLETED parents are NOT orphans: the poller marks a ScrapeJob COMPLETED when its Maps
+ * tasks finish while the Companies it created are still PENDING for the email worker —
+ * sweeping those destroys in-flight work. (ProcessingStatus has no CANCELLED value.)
  */
 export async function cancelOrphanedPendingRecords(): Promise<{ tasks: number; companies: number }> {
     const terminatedJobIds = await prisma.scrapeJob.findMany({
-        where: { status: { in: ['FAILED', 'COMPLETED'] } },
+        where: { status: 'FAILED' },
         select: { id: true }
     });
 
@@ -204,7 +206,7 @@ export async function cancelOrphanedPendingRecords(): Promise<{ tasks: number; c
     ]);
 
     if (taskResult.count > 0 || companyResult.count > 0) {
-        console.log(`🧹 Orphan cleanup: ${taskResult.count} tasks, ${companyResult.count} companies marked FAILED (parent job terminated)`);
+        console.log(`🧹 Orphan cleanup: ${taskResult.count} tasks, ${companyResult.count} companies marked FAILED (parent job FAILED)`);
     }
 
     return { tasks: taskResult.count, companies: companyResult.count };

@@ -66,7 +66,7 @@ const faqs = [
   },
   {
     question: "How are credits consumed?",
-    answer: "You only pay for results. 1 credit = 1 valid lead with extracted data. If we find a business but can't verify their details or they are outside your criteria, you don't pay."
+    answer: "During the beta, scrape jobs don't draw down your balance — credit metering is coming before general availability. Purchased credits stay on your account and will apply once metering launches."
   },
   {
     question: "Do my credits expire?",
@@ -80,7 +80,6 @@ const faqs = [
 
 const stats = [
   { label: "Leads Extracted", value: "10M+" },
-  { label: "Email Accuracy", value: "95%" },
   { label: "Avg. Search Time", value: "< 60s" },
 ];
 
@@ -155,7 +154,7 @@ export default function LandingPage() {
 
         {/* Subtext */}
         <p className="text-lg md:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed">
-          Pull 500 verified leads from any city in under 60 seconds — without touching a spreadsheet.
+          Pull 500 leads with emails from any city in under 60 seconds — without touching a spreadsheet.
         </p>
 
         {/* Free Credits Badge */}
@@ -233,7 +232,7 @@ export default function LandingPage() {
                         <Download className="w-10 h-10 text-amber-500" />
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">3. Export</h3>
-                    <p className="text-zinc-400 text-sm">Download verified emails & phones to CSV in one click.</p>
+                    <p className="text-zinc-400 text-sm">Download emails & phones to CSV in one click.</p>
                 </div>
             </div>
         </div>
@@ -387,8 +386,6 @@ export default function LandingPage() {
                 <span className="text-sm text-zinc-600">© 2026</span>
             </div>
             <div className="flex gap-6 text-sm text-zinc-500">
-                <Link href="#" className="hover:text-zinc-300 transition-colors">Privacy Policy</Link>
-                <Link href="#" className="hover:text-zinc-300 transition-colors">Terms of Service</Link>
                 <a href="mailto:support@swarm.io" className="hover:text-zinc-300 transition-colors">Contact Support</a>
             </div>
          </div>

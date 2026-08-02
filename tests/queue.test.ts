@@ -12,9 +12,11 @@ vi.mock('../src/db/prisma', () => ({
             count: vi.fn(),
             update: vi.fn(),
             findUnique: vi.fn(),
+            updateMany: vi.fn(),
         },
         scrapeJob: {
             update: vi.fn(),
+            findMany: vi.fn(),
         },
         $queryRaw: vi.fn(),
         $transaction: vi.fn(),
@@ -40,7 +42,7 @@ vi.mock('../src/scraper/stealthBrowser', () => ({
 
 
 
-import { resetStalledJobs, completeJob, failJobOrRetry } from '../src/db/queue';
+import { resetStalledJobs, completeJob, failJobOrRetry, cancelOrphanedPendingRecords } from '../src/db/queue';
 import { prisma } from '../src/db/prisma';
 
 const mockPrisma = vi.mocked(prisma);
@@ -184,6 +186,37 @@ describe('Queue System', () => {
                 where: { id: 'company-1' },
                 data: expect.objectContaining({ status: 'FAILED' }),
             });
+        });
+    });
+
+    describe('cancelOrphanedPendingRecords', () => {
+        it('must only treat FAILED parents as orphans — never COMPLETED (Phase A completes jobs while Companies are still PENDING for the email worker)', async () => {
+            (mockPrisma.scrapeJob.findMany as any).mockResolvedValue([]);
+
+            await cancelOrphanedPendingRecords();
+
+            expect(mockPrisma.scrapeJob.findMany).toHaveBeenCalledWith({
+                where: { status: 'FAILED' },
+                select: { id: true }
+            });
+        });
+
+        it('marks PENDING children of FAILED jobs as FAILED', async () => {
+            (mockPrisma.scrapeJob.findMany as any).mockResolvedValue([{ id: 'job-failed' }]);
+            (mockPrisma.scrapeTask.updateMany as any).mockResolvedValue({ count: 2 });
+            mockPrisma.company.updateMany.mockResolvedValue({ count: 5 });
+
+            const result = await cancelOrphanedPendingRecords();
+
+            expect(mockPrisma.scrapeTask.updateMany).toHaveBeenCalledWith({
+                where: { jobId: { in: ['job-failed'] }, status: 'PENDING' },
+                data: { status: 'FAILED' }
+            });
+            expect(mockPrisma.company.updateMany).toHaveBeenCalledWith({
+                where: { jobId: { in: ['job-failed'] }, status: 'PENDING' },
+                data: { status: 'FAILED' }
+            });
+            expect(result).toEqual({ tasks: 2, companies: 5 });
         });
     });
 

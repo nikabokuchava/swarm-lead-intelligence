@@ -22,7 +22,7 @@ export default async function CreditsPage() {
           Buy Credits
         </h1>
         <p className="text-zinc-500 max-w-md mx-auto">
-          Purchase credits to power your lead scraping. Each scrape job consumes credits based on the number of results.
+          Purchase credits for your account. During the beta, scrape jobs don&apos;t draw down your balance — credit metering is coming before general availability.
         </p>
       </div>
 

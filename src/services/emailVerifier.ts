@@ -27,6 +27,20 @@ const SMTP_TIMEOUT_MS = 3000;
 const HELO_DOMAIN = 'truebase.cc';
 const PROBE_FROM = `ping@${HELO_DOMAIN}`;
 
+// LOCAL_DEMO_MODE fabricates VALID/99 results for every address (see verifyEmail).
+// Fail-fast: it must be impossible to ship demo data as real verification output.
+const DEMO_MODE_RAW = (process.env.LOCAL_DEMO_MODE ?? '').toLowerCase();
+const DEMO_MODE_TRUTHY = DEMO_MODE_RAW !== '' && DEMO_MODE_RAW !== 'false' && DEMO_MODE_RAW !== '0';
+if (DEMO_MODE_TRUTHY && process.env.NODE_ENV === 'production') {
+    throw new Error(
+        'LOCAL_DEMO_MODE is enabled while NODE_ENV=production. Demo mode fabricates VALID ' +
+        'verification results and must never run in production. Unset LOCAL_DEMO_MODE to start.'
+    );
+}
+if (DEMO_MODE_TRUTHY) {
+    console.warn('⚠️  LOCAL_DEMO_MODE ENABLED — email verification is FABRICATED: every address is reported VALID/99. Never ship this data.');
+}
+
 const DOMAIN_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
 
 /** CR1: Reject SMTP command injection characters (\r, \n, <, >) and validate RFC 5321 structure */
