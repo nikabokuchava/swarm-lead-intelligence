@@ -57,12 +57,26 @@ function isSmtpSafeEmail(email: string): boolean {
     return SAFE_EMAIL_RE.test(email) && !email.includes('\r') && !email.includes('\n');
 }
 
+/** Outcome of a catch-all probe: `determined` false means we learned nothing. */
+interface CatchAllProbe {
+    determined: boolean;
+    isCatchAll: boolean;
+}
+
 /** T1: Domain-level MX cache — avoids redundant DNS + catch-all probes for same domain */
 interface MxCacheEntry {
     primaryMx: string;
     provider: string;
     isCatchAll: boolean;
+    /** Epoch ms the entry was resolved; entries older than the TTL are re-resolved. */
+    fetchedAt: number;
 }
+
+/** Cache lifetime. MX records rotate, and an entry can hold a stale catch-all verdict. */
+const MX_CACHE_TTL_MS = parseInt(process.env.MX_CACHE_TTL_MS || '', 10) > 0
+    ? parseInt(process.env.MX_CACHE_TTL_MS as string, 10)
+    : 60 * 60 * 1000; // 1 hour
+
 const mxCache = new Map<string, MxCacheEntry>();
 
 /** Clear the MX cache (for testing or long-running process memory management) */
@@ -76,21 +90,26 @@ export function clearMxCache(): void {
  */
 export async function getMxInfo(domain: string): Promise<MxCacheEntry | null> {
     const cached = mxCache.get(domain);
-    if (cached) {
+    if (cached && Date.now() - cached.fetchedAt < MX_CACHE_TTL_MS) {
         // LRU refresh: delete + re-set moves entry to end of insertion order
         mxCache.delete(domain);
         mxCache.set(domain, cached);
         return cached;
     }
+    if (cached) mxCache.delete(domain); // expired
 
     const mxRecords = await dnsResolver.resolveMx(domain);
     if (!mxRecords || mxRecords.length === 0) return null;
 
     const primaryMx = mxRecords.sort((a, b) => a.priority - b.priority)[0].exchange;
     const provider = getProvider(primaryMx);
-    const isCatchAll = await isCatchAllDomain(domain, primaryMx);
+    const probe = await isCatchAllDomain(domain, primaryMx);
 
-    const entry: MxCacheEntry = { primaryMx, provider, isCatchAll };
+    const entry: MxCacheEntry = { primaryMx, provider, isCatchAll: probe.isCatchAll, fetchedAt: Date.now() };
+    // An undetermined catch-all probe is never cached: storing isCatchAll=false here
+    // would permanently mark a real catch-all domain as individually verifiable.
+    if (!probe.determined) return entry;
+
     // CR2: LRU eviction — delete oldest 1000 entries instead of nuking entire cache
     if (mxCache.size >= 5000) {
         const keysToEvict = Array.from(mxCache.keys()).slice(0, 1000);
@@ -240,18 +259,20 @@ export function probeSmtp(email: string, mxExchange: string): Promise<SmtpProbeR
  * falls through to the real probe — which will also return UNKNOWN, correctly
  * reflecting our inability to verify.
  */
-async function isCatchAllDomain(domain: string, mxExchange: string): Promise<boolean> {
-    // No sender identity configured — this probes, so it must not run.
+async function isCatchAllDomain(domain: string, mxExchange: string): Promise<CatchAllProbe> {
     if (!SMTP_PROBING_ENABLED) {
-        return false;
+        return { determined: false, isCatchAll: false };
     }
     const garbageEmail = `${generateGarbageLocal()}@${domain}`;
     try {
         const result = await probeSmtp(garbageEmail, mxExchange);
-        // Server accepted garbage → catch-all
-        return result.status === 'VALID';
+        // Only a definitive verdict counts. A failed/UNKNOWN probe must NOT be recorded
+        // as "not a catch-all" — that negative would later mark real catch-all mailboxes VALID/95.
+        if (result.status === 'VALID') return { determined: true, isCatchAll: true };
+        if (result.status === 'INVALID') return { determined: true, isCatchAll: false };
+        return { determined: false, isCatchAll: false };
     } catch {
-        return false;
+        return { determined: false, isCatchAll: false };
     }
 }
 

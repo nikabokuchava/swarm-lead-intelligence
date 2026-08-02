@@ -91,4 +91,96 @@ describe('emailVerifier — SMTP probing disabled (no SMTP_HELO_DOMAIN)', () => 
         expect((await verifyEmail('not-an-email')).status).toBe('INVALID');
         expect(socketConnect).not.toHaveBeenCalled();
     });
+
+    it('does not negative-cache the catch-all verdict when the probe never ran', async () => {
+        mockResolveMx.mockResolvedValue([{ exchange: 'aspmx.l.google.com', priority: 10 }]);
+        const { getMxInfo } = await import('../src/services/emailVerifier');
+
+        await getMxInfo('example.com');
+        await getMxInfo('example.com');
+
+        // Undetermined probe => entry is not cached => DNS is consulted again.
+        expect(mockResolveMx).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('emailVerifier — SMTP probing enabled', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.clearAllMocks();
+        smtpMode = 'script';
+        delete process.env.LOCAL_DEMO_MODE;
+        delete process.env.MX_CACHE_TTL_MS;
+        process.env.SMTP_HELO_DOMAIN = 'probe.example.test';
+        process.env.SMTP_PROBE_FROM = 'ping@probe.example.test';
+        mockResolveMx.mockResolvedValue([{ exchange: 'mx.example.com', priority: 10 }]);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        delete process.env.SMTP_HELO_DOMAIN;
+        delete process.env.SMTP_PROBE_FROM;
+        delete process.env.MX_CACHE_TTL_MS;
+    });
+
+    it('caches a determined result within the TTL window', async () => {
+        process.env.MX_CACHE_TTL_MS = '3600000';
+        smtpScript = NOT_CATCH_ALL_SCRIPT;
+        const { getMxInfo } = await import('../src/services/emailVerifier');
+
+        await getMxInfo('fresh.example.com');
+        await getMxInfo('fresh.example.com');
+        await getMxInfo('fresh.example.com');
+
+        expect(mockResolveMx).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-resolves after the TTL expires', async () => {
+        process.env.MX_CACHE_TTL_MS = '1000';
+        smtpScript = NOT_CATCH_ALL_SCRIPT;
+        const { getMxInfo } = await import('../src/services/emailVerifier');
+
+        await getMxInfo('cached.example.com');
+        await getMxInfo('cached.example.com');
+        expect(mockResolveMx).toHaveBeenCalledTimes(1); // served from cache
+
+        vi.useFakeTimers();
+        vi.setSystemTime(Date.now() + 2000); // past the 1s TTL
+        await getMxInfo('cached.example.com');
+
+        expect(mockResolveMx).toHaveBeenCalledTimes(2); // expired => re-resolved
+    });
+
+    it('detects a catch-all domain and caches it', async () => {
+        smtpScript = CATCH_ALL_SCRIPT;
+        const { getMxInfo } = await import('../src/services/emailVerifier');
+
+        const entry = await getMxInfo('catchall.example.com');
+
+        expect(entry?.isCatchAll).toBe(true);
+        expect(entry?.fetchedAt).toBeTypeOf('number');
+    });
+
+    it('does NOT negative-cache a domain whose catch-all probe failed', async () => {
+        smtpMode = 'error'; // server unreachable => probe verdict UNKNOWN
+        const { getMxInfo } = await import('../src/services/emailVerifier');
+
+        const first = await getMxInfo('flaky.example.com');
+        await getMxInfo('flaky.example.com');
+
+        // isCatchAll=false was never stored, so a later real catch-all verdict can still win.
+        expect(first?.isCatchAll).toBe(false);
+        expect(mockResolveMx).toHaveBeenCalledTimes(2);
+    });
+
+    it('a failed probe followed by a successful one yields the true catch-all verdict', async () => {
+        smtpMode = 'error';
+        const { getMxInfo } = await import('../src/services/emailVerifier');
+        expect((await getMxInfo('later.example.com'))?.isCatchAll).toBe(false);
+
+        // Server recovers and reveals the domain really is a catch-all.
+        smtpMode = 'script';
+        smtpScript = CATCH_ALL_SCRIPT;
+        expect((await getMxInfo('later.example.com'))?.isCatchAll).toBe(true);
+    });
 });
