@@ -26,7 +26,7 @@ Swarm is a multi-tenant lead-enrichment SaaS proof-of-work project built with Ne
 |------------|-----|
 | **Public business-data collection** | Puppeteer-driven collection of publicly listed business fields (name, phone, address, website, ratings/reviews). |
 | **Email discovery** | Regex-first extraction with an optional structured-LLM fallback (40K-token context). Confidence scores clamped 0–100. |
-| **Email validation** | DNS/MX validation (MX lookup, provider identification, catch-all detection) with optional SMTP probing where available. `VALID` is a validation result, not a delivery guarantee. |
+| **Email validation** | DNS/MX validation (MX lookup, provider identification, catch-all detection). SMTP probing is **off unless you configure a sender identity you control** (`SMTP_HELO_DOMAIN` / `SMTP_PROBE_FROM`); without it every address resolves to `UNKNOWN`. `VALID` is a validation result, not a delivery guarantee. |
 | **Optional contact inference** | For enrichment, an LLM extracts owner/founder names from crawled public pages and generates candidate email patterns to validate. |
 
 ---
@@ -38,7 +38,8 @@ Swarm is a multi-tenant lead-enrichment SaaS proof-of-work project built with Ne
 - **Credits:** Stripe checkout and an idempotent webhook top up a credit balance, but **runtime credit consumption is intentionally disabled / out of scope** — running a job does not deduct credits.
 - **Rate limiting is per-process** (in-memory sliding window), **not distributed** — it does not coordinate across multiple instances.
 - **Tests are unit-level with mocked Prisma** — they verify logic and hardening invariants, not load or real-concurrency behavior.
-- **Email validation** uses DNS/MX validation with optional SMTP probing where available. `VALID` is a validation result, not a delivery guarantee. **No deliverability or hit-rate percentage is claimed.**
+- **Email validation** uses DNS/MX validation. SMTP probing is disabled unless `SMTP_HELO_DOMAIN` and `SMTP_PROBE_FROM` are set to a domain you control — with probing off, results are domain-level only and no mailbox is confirmed. `VALID` is a validation result, not a delivery guarantee. **No deliverability or hit-rate percentage is claimed.**
+- **`LOCAL_DEMO_MODE`** is a development-only flag that **fabricates** `VALID` results for every address without any DNS, MX or SMTP work. The worker refuses to start when it is enabled with `NODE_ENV=production`. Never treat data produced under it as verified.
 - **Data collection** depends on third-party page structure and can break when those pages change. Respect each site's terms of use and applicable law before collecting data.
 
 ---
@@ -86,7 +87,7 @@ Dashboard and Worker are **fully decoupled**. They share nothing except PostgreS
 - `FOR UPDATE SKIP LOCKED` — atomic job claiming; multiple workers can poll the same queue without double-claiming a task
 - Browser reuse — single Chromium instance rotated every 50 tasks
 - MX cache — one DNS lookup per domain, not per email
-- Parallel verification — chunks of 3 with jitter (C-Level stays sequential)
+- Parallel verification — chunks of 3 with jitter (C-Level inference uses the same chunking)
 - Transaction safety — Company + Contact writes wrapped in `prisma.$transaction`
 
 ---
@@ -171,7 +172,7 @@ cp .env.example .env   # fill in your credentials
 docker compose -f docker-compose.yml up --build -d
 ```
 
-> **Note on email validation:** Validation uses DNS/MX checks (MX lookup + catch-all detection) with optional SMTP probing where available. Many networks block outbound SMTP (port 25), so the worker does not depend on it and records `UNKNOWN` as a conservative fallback. `VALID` is a validation result, not a delivery guarantee.
+> **Note on email validation:** Validation uses DNS/MX checks (MX lookup + catch-all detection). SMTP probing runs only when `SMTP_HELO_DOMAIN` and `SMTP_PROBE_FROM` are set to a domain you control — there is no default, because probing under a domain you do not own misrepresents the sender. With probing off, or where outbound SMTP (port 25) is blocked, the worker records `UNKNOWN` as a conservative fallback and never reports `VALID` from a path that did not probe. `VALID` is a validation result, not a delivery guarantee.
 
 See the [VPS Deployment Guide](docs/VPS-DEPLOYMENT.md) for full instructions.
 
@@ -202,7 +203,7 @@ See the [VPS Deployment Guide](docs/VPS-DEPLOYMENT.md) for full instructions.
 npm run worker              # Start worker (dev mode)
 npm run worker:prod         # Build + start worker (production)
 npm run generate-sample     # Export top 50 C-Level contacts to CSV
-npm run export:premium      # Export premium verified leads
+npm run export:premium      # Export top-confidence C-Level contacts
 npm run verify:all          # Re-verify all leads in database
 npm run reset-tasks         # Reset stuck tasks to PENDING
 ```
