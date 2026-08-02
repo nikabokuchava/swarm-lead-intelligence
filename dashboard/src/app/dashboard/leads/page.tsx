@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { auth } from '@clerk/nextjs/server';
+import { requireUserId } from '@/lib/tenant';
 
 import {
   Table,
@@ -22,7 +22,7 @@ interface LeadsPageProps {
 }
 
 export default async function LeadsPage(props: LeadsPageProps) {
-  const { userId } = await auth();
+  const userId = await requireUserId();
   const searchParams = await props.searchParams;
   const jobId = searchParams.jobId;
   let jobName = null;
@@ -36,7 +36,7 @@ export default async function LeadsPage(props: LeadsPageProps) {
     if (job && job.userId === userId) jobName = job.query;
   }
 
-  const whereClause: Record<string, unknown> = userId ? { userId } : {};
+  const whereClause: Record<string, unknown> = { userId };
   if (jobId) whereClause.jobId = jobId;
 
   const leads = await prisma.company.findMany({

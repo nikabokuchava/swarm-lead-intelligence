@@ -5,6 +5,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { escapeCsvCell as escCsv } from '../utils/csvEscape.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -387,12 +388,6 @@ Generate a personalized follow-up bump email. Keep it under 50 words.`;
 
   if (MODE === 'day4' || MODE === 'day7' || MODE === 'post-sample') {
     // CSV output for Day 4 switch-angle and Post-Sample Day 5
-    const escCsv = (s: string): string => {
-      if (s.includes('"') || s.includes(',') || s.includes('\n')) {
-        return `"${s.replace(/"/g, '""')}"`;
-      }
-      return s;
-    };
     const csvLines: string[] = [
       'Company Name,Contact Name,Contact Email,Subject,Email Body',
     ];

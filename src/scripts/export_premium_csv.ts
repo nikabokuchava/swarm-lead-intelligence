@@ -4,6 +4,7 @@ import { program } from 'commander';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { escapeCsvCell as escapeCSV } from '../utils/csvEscape.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,17 +56,6 @@ function parseZipFromAddress(address: string | null): string {
   if (!address) return '';
   const match = address.match(/\b(\d{5})(?:-\d{4})?\b/);
   return match ? match[1] : '';
-}
-
-// --- CSV Escaping (RFC 4180) ---
-
-function escapeCSV(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
 }
 
 // --- Main ---

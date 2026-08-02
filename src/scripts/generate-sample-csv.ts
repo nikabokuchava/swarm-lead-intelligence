@@ -3,21 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { escapeCsvCell as escapeCSV } from '../utils/csvEscape.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '../../');
 
 const prisma = new PrismaClient();
-
-function escapeCSV(value: string | null | undefined): string {
-  if (value == null) return '';
-  const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
 
 async function main() {
   console.log('Fetching top 50 premium C-Level leads...');

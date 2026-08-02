@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { escapeCsvCell as escapeCSV } from '../utils/csvEscape.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,15 +13,6 @@ const samplesDir = path.join(rootDir, 'samples');
 const prisma = new PrismaClient();
 const LIMIT = 20;
 const OUTPUT_FILE = 'day1-outreach.csv';
-
-function escapeCSV(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
 
 async function main(): Promise<void> {
   if (!fs.existsSync(samplesDir)) {

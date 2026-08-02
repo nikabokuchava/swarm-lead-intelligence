@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
+import { escapeCsvCell } from '@/lib/csvEscape';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
@@ -34,11 +35,7 @@ export async function GET(req: NextRequest) {
       include: { contacts: true },
     });
 
-    const escape = (val: string | number | null | undefined): string => {
-      if (val == null || val === '') return '';
-      const str = String(val);
-      return `"${str.replace(/"/g, '""')}"`;
-    };
+    const escape = escapeCsvCell;
 
     const csvHeaders = [
       'Company Name', 'Website', 'Phone', 'Address', 'Rating', 'Review Count',

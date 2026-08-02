@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { escapeCsvCell as escapeCSV } from './csvEscape.js';
 
 interface Company {
     id: string;
@@ -49,18 +50,4 @@ export function exportToCSV(companies: Company[], outputPath?: string): string {
     fs.writeFileSync(filename, csvContent, 'utf-8');
 
     return filename;
-}
-
-/**
- * Escapes special characters for CSV format
- */
-function escapeCSV(value: string): string {
-    if (!value) return '';
-    
-    // If contains comma, quote, or newline, wrap in quotes and escape quotes
-    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-        return `"${value.replace(/"/g, '""')}"`;
-    }
-    
-    return value;
 }

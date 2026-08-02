@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { escapeCsvCell as escapeCSV } from '../utils/csvEscape.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,15 +54,6 @@ function buildBody(firstName: string | null, companyName: string): string {
     `Want me to send it over?\n\n` +
     `— Nick Bokuchava, Founder, TrueBase`
   );
-}
-
-function escapeCSV(value: string | null | undefined): string {
-  if (value == null) return '';
-  const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
 }
 
 async function main() {

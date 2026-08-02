@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, Sparkles, Zap, TrendingUp, Building2, Gift, Search, Database, Download, Star, ChevronDown } from "lucide-react";
+import { ArrowRight, Check, Sparkles, Zap, TrendingUp, Building2, Gift, Search, Database, Download, ChevronDown } from "lucide-react";
 import { MockTerminal } from "@/components/MockTerminal";
 import { BentoGrid } from "@/components/landing/BentoGrid";
 import { motion, AnimatePresence } from "framer-motion";
@@ -38,31 +38,10 @@ const pricingPlans = [
   },
 ];
 
-const testimonials = [
-  {
-    quote: "Generated 200 leads in 10 minutes for our agency. Paid for itself immediately.",
-    author: "Sarah J.",
-    role: "Agency Founder",
-    avatar: "https://api.dicebear.com/7.x/notionists/svg?seed=Sarah"
-  },
-  {
-    quote: "The Google Maps extraction is significantly more accurate than other tools we've used.",
-    author: "Michael R.",
-    role: "Sales Director",
-    avatar: "https://api.dicebear.com/7.x/notionists/svg?seed=Michael"
-  },
-  {
-    quote: "Finally a tool that doesn't require a monthly subscription. Love the credit system.",
-    author: "David K.",
-    role: "Freelancer",
-    avatar: "https://api.dicebear.com/7.x/notionists/svg?seed=David"
-  }
-];
-
 const faqs = [
   {
     question: "Is it legal to collect data from Google Maps?",
-    answer: "Yes. Our system extracts only publicly available business contact information (Name, Address, Phone, Website) that businesses intentionally publish. We automate what a human would do manually, respecting rate limits and privacy policies."
+    answer: "Our system collects only publicly available business contact information (Name, Address, Phone, Website) that businesses publish themselves, and paces its requests with built-in delays. How you may use collected data depends on your jurisdiction and purpose — assess that before running campaigns."
   },
   {
     question: "How are credits consumed?",
@@ -79,7 +58,6 @@ const faqs = [
 ];
 
 const stats = [
-  { label: "Leads Extracted", value: "10M+" },
   { label: "Avg. Search Time", value: "< 60s" },
 ];
 
@@ -247,31 +225,6 @@ export default function LandingPage() {
                 <p className="text-zinc-400 max-w-xl mx-auto">Built for agencies, sales teams, and growth marketers.</p>
             </div>
             <BentoGrid />
-        </div>
-      </section>
-
-      {/* Testimonials Section */}
-      <section className="py-24 border-t border-zinc-900">
-        <div className="max-w-6xl mx-auto px-4">
-            <h2 className="text-3xl font-bold text-center text-white mb-16">Trusted by Growth Teams</h2>
-            <div className="grid md:grid-cols-3 gap-6">
-                {testimonials.map((t, i) => (
-                    <div key={i} className="bg-zinc-900/30 border border-zinc-800 p-8 rounded-2xl hover:border-zinc-700 transition-colors">
-                        <div className="flex gap-1 mb-4">
-                            {[1,2,3,4,5].map((s) => <Star key={s} className="w-4 h-4 text-amber-500 fill-amber-500" />)}
-                        </div>
-                        <p className="text-zinc-300 mb-6 leading-relaxed">"{t.quote}"</p>
-                        <div className="flex items-center gap-3">
-                            {/* Avatar */}
-                            <img src={t.avatar} alt={t.author} className="w-10 h-10 rounded-full bg-zinc-800" />
-                            <div>
-                                <div className="font-semibold text-white text-sm">{t.author}</div>
-                                <div className="text-xs text-zinc-500">{t.role}</div>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
         </div>
       </section>
 

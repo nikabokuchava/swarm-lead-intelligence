@@ -249,7 +249,8 @@ async function isCatchAllDomain(domain: string, mxExchange: string): Promise<boo
  */
 export async function verifyEmail(email: string): Promise<EmailVerificationResult> {
     // LOCAL_DEMO_MODE: skip ALL verification (DNS rate-limits block Port 25 on consumer ISPs)
-    if (process.env.LOCAL_DEMO_MODE === 'true') {
+    // Uses the same DEMO_MODE_TRUTHY as the boot guard/warn so behaviour and warning cannot disagree.
+    if (DEMO_MODE_TRUTHY) {
         return { status: 'VALID', confidence: 99, mxProvider: 'Google Workspace (Demo)' };
     }
 

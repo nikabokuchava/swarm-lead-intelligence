@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { auth } from "@clerk/nextjs/server";
+import { requireUserId } from "@/lib/tenant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -11,8 +11,8 @@ import { JobPoller } from "@/components/JobPoller";
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const { userId } = await auth();
-  const userFilter = userId ? { userId } : {};
+  const userId = await requireUserId();
+  const userFilter = { userId };
 
   const [totalLeads, activeJobs, recentLeads, allLeads] = await Promise.all([
     prisma.company.count({ where: userFilter }),
