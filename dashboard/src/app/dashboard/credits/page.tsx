@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server';
+import { requireUserId } from '@/lib/tenant';
 import { getCredits } from '@/lib/user';
 import { PricingSection } from '@/components/PricingSection';
 import { Coins } from 'lucide-react';
@@ -6,8 +6,8 @@ import { Coins } from 'lucide-react';
 export const dynamic = 'force-dynamic';
 
 export default async function CreditsPage() {
-  const { userId } = await auth();
-  const credits = userId ? await getCredits(userId) : 0;
+  const userId = await requireUserId();
+  const credits = await getCredits(userId);
 
   return (
     <div className="p-8 space-y-10 font-sans">

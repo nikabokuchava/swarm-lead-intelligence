@@ -54,6 +54,9 @@ async function runWorker() {
         let browser = await createBrowser();
         let jobCount = 0;
         const isPremiumCache = new Map<string, boolean>(); // HI2: Cache isPremium by jobId
+        // Track the currently-claimed Company so crash/shutdown paths can release it —
+        // otherwise the row stays PROCESSING and is skipped until stale-lock recovery.
+        let inFlight: { id: string; retries: number } | null = null;
         logger.info('🌐 Stealth Browser initialized (Headless)');
 
         /** Gracefully close and re-launch the browser */
@@ -76,6 +79,17 @@ async function runWorker() {
             isShuttingDown = true;
             logger.info('🛑 Shutting down worker...');
             try {
+                // Release the in-flight claim BEFORE closing anything, and await it —
+                // process.exit below would otherwise kill the write mid-flight.
+                if (inFlight) {
+                    try {
+                        await failJobOrRetry(inFlight.id, inFlight.retries, 'Worker shut down mid-processing');
+                        logger.info(`🔓 Released in-flight company ${inFlight.id} on shutdown`);
+                    } catch (releaseErr) {
+                        logger.error('⚠️ Could not release in-flight company on shutdown:', releaseErr);
+                    }
+                    inFlight = null;
+                }
                 await browser.close();
                 healthServer.close();
                 await disconnectDB();
@@ -129,11 +143,13 @@ async function runWorker() {
                     continue;
                 }
 
+                inFlight = { id: job.id, retries: job.retries };
                 logger.info(`👷 Processing: ${job.name} (ID: ${job.id}) - URL: ${job.website}`);
 
                 if (!job.website) {
                     logger.warn(`⚠️  No website for ${job.name}, marking FAILED.`);
                     await completeJob(job.id, false, 'Missing website URL');
+                    inFlight = null;
                     continue;
                 }
 
@@ -160,6 +176,7 @@ async function runWorker() {
                 if (result.error) {
                     logger.warn(`❌ Scrape error for ${job.website}: ${result.error}`);
                     await failJobOrRetry(job.id, job.retries, result.error);
+                    inFlight = null;
                 } else {
                     const emailCount = result.allEmails.length;
 
@@ -272,6 +289,7 @@ async function runWorker() {
 
                     await updateCompanyEmails(job.id, result.allEmails, verifiedDetails, job.jobId ?? undefined);
                     await completeJob(job.id, true);
+                    inFlight = null;
                 }
 
                 // 3. Track job count and rotate browser if threshold reached
@@ -291,8 +309,17 @@ async function runWorker() {
                 }
 
             } catch (loopError) {
-                // Transient per-job error — rotate browser and continue to next job
+                // Transient per-job error — release the claimed row, rotate browser, continue
                 logger.error('💥 Error processing job — rotating browser:', loopError);
+                if (inFlight) {
+                    try {
+                        await failJobOrRetry(inFlight.id, inFlight.retries, loopError instanceof Error ? loopError.message : String(loopError));
+                        logger.info(`🔓 Released claimed company ${inFlight.id} after crash`);
+                    } catch (releaseErr) {
+                        logger.error('⚠️ Could not release claimed company after crash:', releaseErr);
+                    }
+                    inFlight = null;
+                }
                 try {
                     await rotateBrowser('crash recovery');
                 } catch (restartErr) {

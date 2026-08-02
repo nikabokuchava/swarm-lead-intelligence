@@ -42,7 +42,7 @@ vi.mock('../src/scraper/stealthBrowser', () => ({
 
 
 
-import { resetStalledJobs, completeJob, failJobOrRetry, cancelOrphanedPendingRecords } from '../src/db/queue';
+import { resetStalledJobs, completeJob, failJobOrRetry, cancelOrphanedPendingRecords, failTaskOrRetry } from '../src/db/queue';
 import { prisma } from '../src/db/prisma';
 
 const mockPrisma = vi.mocked(prisma);
@@ -217,6 +217,43 @@ describe('Queue System', () => {
                 data: { status: 'FAILED' }
             });
             expect(result).toEqual({ tasks: 2, companies: 5 });
+        });
+    });
+
+    describe('failTaskOrRetry', () => {
+        it('is a no-op when the task is no longer PROCESSING (already handled by processJob)', async () => {
+            (mockPrisma.scrapeTask.findUnique as any).mockResolvedValue({ id: 't1', status: 'PENDING', retries: 0, maxRetries: 3 });
+
+            await failTaskOrRetry('t1', 'crash');
+
+            expect(mockPrisma.scrapeTask.update).not.toHaveBeenCalled();
+        });
+
+        it('releases a PROCESSING task back to PENDING with retry increment and cleared lock', async () => {
+            (mockPrisma.scrapeTask.findUnique as any).mockResolvedValue({ id: 't1', status: 'PROCESSING', retries: 1, maxRetries: 3 });
+
+            await failTaskOrRetry('t1', 'crash');
+
+            expect(mockPrisma.scrapeTask.update).toHaveBeenCalledWith({
+                where: { id: 't1' },
+                data: {
+                    status: 'PENDING',
+                    workerId: null,
+                    lockedAt: null,
+                    retries: { increment: 1 }
+                }
+            });
+        });
+
+        it('hard-fails a PROCESSING task at max retries, persisting the reason', async () => {
+            (mockPrisma.scrapeTask.findUnique as any).mockResolvedValue({ id: 't1', status: 'PROCESSING', retries: 3, maxRetries: 3 });
+
+            await failTaskOrRetry('t1', 'browser died');
+
+            expect(mockPrisma.scrapeTask.update).toHaveBeenCalledWith({
+                where: { id: 't1' },
+                data: expect.objectContaining({ status: 'FAILED', failureReason: 'browser died' })
+            });
         });
     });
 

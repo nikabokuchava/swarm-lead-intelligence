@@ -241,3 +241,34 @@ export async function failJobOrRetry(companyId: string, currentRetries: number, 
         });
     }
 }
+
+/**
+ * Release a claimed ScrapeTask after a poller crash or shutdown.
+ * Mirrors the per-task retry in scraperService's catch, but only acts while the row
+ * is still PROCESSING — a task that processJob already handled is never double-released.
+ */
+export async function failTaskOrRetry(taskId: string, errorMessage?: string): Promise<void> {
+    const current = await prisma.scrapeTask.findUnique({ where: { id: taskId } });
+    if (!current || current.status !== 'PROCESSING') return;
+
+    if (current.retries < current.maxRetries) {
+        await prisma.scrapeTask.update({
+            where: { id: taskId },
+            data: {
+                status: 'PENDING',
+                workerId: null,
+                lockedAt: null,
+                retries: { increment: 1 }
+            }
+        });
+    } else {
+        await prisma.scrapeTask.update({
+            where: { id: taskId },
+            data: {
+                status: 'FAILED',
+                failureReason: errorMessage ?? null,
+                failedAt: new Date(),
+            }
+        });
+    }
+}

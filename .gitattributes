@@ -1,0 +1,3 @@
+# The worker entrypoint runs inside a Linux container — CRLF in a sh script
+# breaks the shebang, so pin it to LF regardless of core.autocrlf.
+docker-entrypoint.sh text eol=lf

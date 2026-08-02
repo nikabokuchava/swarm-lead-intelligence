@@ -1,5 +1,5 @@
 import { prisma } from '../db/company.js';
-import { recoverStaleLocks, cancelOrphanedPendingRecords } from '../db/queue.js';
+import { recoverStaleLocks, cancelOrphanedPendingRecords, failTaskOrRetry } from '../db/queue.js';
 import { processJob } from './scraperService.js';
 import { config } from '../config/index.js';
 import { StealthBrowser } from '../scraper/stealthBrowser.js';
@@ -69,6 +69,8 @@ export async function startPolling() {
     // M1: Create shared browser once, reuse across tasks
     let browser = await createBrowser();
     let jobCount = 0;
+    // Track the currently-claimed ScrapeTask so crash/shutdown paths can release it
+    let inFlightTaskId: string | null = null;
     logger.info('🌐 Poller StealthBrowser initialized.');
 
     /** Gracefully close and re-launch the browser */
@@ -89,6 +91,17 @@ export async function startPolling() {
         if (isShuttingDown) return;
         isShuttingDown = true;
         logger.info('🛑 Poller received shutdown signal...');
+        // Release the in-flight claim before closing the browser — otherwise the
+        // ScrapeTask stays PROCESSING and is skipped until stale-lock recovery.
+        if (inFlightTaskId) {
+            try {
+                await failTaskOrRetry(inFlightTaskId, 'Poller shut down mid-processing');
+                logger.info(`🔓 Released in-flight task ${inFlightTaskId} on shutdown`);
+            } catch (releaseErr) {
+                logger.error('⚠️ Could not release in-flight task on shutdown:', releaseErr);
+            }
+            inFlightTaskId = null;
+        }
         try {
             await browser.close();
         } catch { /* best-effort */ }
@@ -117,6 +130,7 @@ export async function startPolling() {
                 const taskId = await claimNextTask();
 
                 if (taskId) {
+                    inFlightTaskId = taskId;
                     // Re-fetch with relations for quota check
                     const task = await prisma.scrapeTask.findUnique({
                         where: { id: taskId },
@@ -133,6 +147,8 @@ export async function startPolling() {
 
                     if (!task) {
                         logger.warn(`⚠️ Task ${taskId} claimed but not found on re-fetch.`);
+                        await failTaskOrRetry(taskId, 'Claimed task missing on re-fetch');
+                        inFlightTaskId = null;
                         await sleep(POLLING_INTERVAL);
                         continue;
                     }
@@ -147,11 +163,14 @@ export async function startPolling() {
                             where: { id: taskId },
                             data: { status: 'COMPLETED' }
                         });
+                        inFlightTaskId = null;
                         continue;
                     }
 
                     // M1: Pass shared browser to processJob
                     const result = await processJob(task.id, config.HEADLESS, browser);
+                    // processJob settles the task's status itself (retry or FAILED) in both outcomes
+                    inFlightTaskId = null;
 
                     if (result.success) {
                         consecutiveFailures = 0;
@@ -173,6 +192,17 @@ export async function startPolling() {
             } catch (error) {
                 consecutiveFailures++;
                 logger.error(`⚠️ Poller Error (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}):`, error);
+                // Release the claimed task before recovery — failTaskOrRetry no-ops
+                // unless the row is still PROCESSING, so no double-release
+                if (inFlightTaskId) {
+                    try {
+                        await failTaskOrRetry(inFlightTaskId, error instanceof Error ? error.message : String(error));
+                        logger.info(`🔓 Released claimed task ${inFlightTaskId} after crash`);
+                    } catch (releaseErr) {
+                        logger.error('⚠️ Could not release claimed task after crash:', releaseErr);
+                    }
+                    inFlightTaskId = null;
+                }
                 // Force browser restart on critical errors
                 try {
                     await rotateBrowser('crash recovery');

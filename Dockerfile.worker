@@ -61,5 +61,8 @@ COPY prisma ./prisma/
 # Generate Prisma client for the runtime environment
 RUN npx prisma generate
 
-# Run migrations, then start BOTH the job poller (Maps scraping) and email worker
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js --serve & node dist/worker.js"]
+# Entrypoint runs migrations to completion, then starts the job poller (Maps
+# scraping) + email worker with TERM/INT forwarded to both (see the script).
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+CMD ["./docker-entrypoint.sh"]
