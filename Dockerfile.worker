@@ -61,8 +61,7 @@ COPY prisma ./prisma/
 # Generate Prisma client for the runtime environment
 RUN npx prisma generate
 
-# Entrypoint runs migrations to completion, then starts the job poller (Maps
-# scraping) + email worker with TERM/INT forwarded to both (see the script).
-COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
-CMD ["./docker-entrypoint.sh"]
+# One process per container: docker-compose runs this image three times —
+# a one-shot `migrate`, the `job-poller`, and the `scraper-worker` — each with
+# its own command. A dead process exits its container, so restart: always fires.
+CMD ["node", "dist/worker.js"]

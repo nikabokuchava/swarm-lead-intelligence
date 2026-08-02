@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   # ─── PostgreSQL Database ──────────────────────────────────────────────────
   postgres:
@@ -21,7 +19,57 @@ services:
       retries: 5
       start_period: 10s
 
-  # ─── Scraper Worker ───────────────────────────────────────────────────────
+  # ─── Migrations (one-shot) ────────────────────────────────────────────────
+  # Runs to completion before either long-running service starts, so neither
+  # races an unmigrated schema and both cannot run `migrate deploy` at once.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: swarm_migrate
+    restart: 'no'
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://swarm:swarm_secret@postgres:5432/swarm_leads
+      NODE_ENV: production
+
+  # ─── Job Poller (Maps collection) ─────────────────────────────────────────
+  # Separate service, not a background child of the worker: as its own container
+  # its death exits the container and `restart: always` actually fires. Under the
+  # previous single-container supervisor a dead poller was invisible — the health
+  # endpoint lives in the worker only, so the container stayed up and healthy
+  # while Maps collection was down.
+  job-poller:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: swarm_poller
+    restart: always
+    shm_size: '2gb'
+    command: ['node', 'dist/index.js', '--serve']
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://swarm:swarm_secret@postgres:5432/swarm_leads
+      NODE_ENV: production
+      HEADLESS: 'true'
+      LOG_FILE: /app/logs/poller.log
+      MAX_RESULTS: '50'
+      SCROLL_DELAY_MS: '1200'
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
+    volumes:
+      - worker_logs:/app/logs
+
+  # ─── Scraper Worker (email crawl + verification) ──────────────────────────
   scraper-worker:
     build:
       context: .
@@ -29,10 +77,13 @@ services:
     container_name: swarm_worker
     restart: always
     shm_size: '2gb'
+    command: ['node', 'dist/worker.js']
     env_file: .env
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://swarm:swarm_secret@postgres:5432/swarm_leads
       NODE_ENV: production
