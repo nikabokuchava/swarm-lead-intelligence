@@ -12,6 +12,7 @@ export default defineConfig([
       "**/node_modules/**",
       "**/coverage/**",
       "**/.turbo/**",
+      "**/.gitnexus/**",
     ],
   },
   { files: ["**/*.{js,mjs,cjs,ts,mts,cts}"], plugins: { js }, extends: ["js/recommended"], languageOptions: { globals: globals.browser } },
