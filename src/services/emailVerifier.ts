@@ -24,8 +24,16 @@ export interface SmtpProbeResult {
 }
 
 const SMTP_TIMEOUT_MS = 3000;
-const HELO_DOMAIN = 'truebase.cc';
-const PROBE_FROM = `ping@${HELO_DOMAIN}`;
+
+// SMTP probing announces an identity to third-party mail servers (HELO + MAIL FROM).
+// There is NO default: a hardcoded domain impersonates whoever actually owns it.
+// Unset => no probing at all; verification is domain-level only and returns UNKNOWN.
+const HELO_DOMAIN = process.env.SMTP_HELO_DOMAIN?.trim() || '';
+const PROBE_FROM = process.env.SMTP_PROBE_FROM?.trim() || (HELO_DOMAIN ? `ping@${HELO_DOMAIN}` : '');
+export const SMTP_PROBING_ENABLED = HELO_DOMAIN !== '' && PROBE_FROM !== '';
+if (!SMTP_PROBING_ENABLED) {
+    console.warn('SMTP probing disabled (SMTP_HELO_DOMAIN unset) — verification is domain-level only; no mailbox is confirmed.');
+}
 
 // LOCAL_DEMO_MODE fabricates VALID/99 results for every address (see verifyEmail).
 // Fail-fast: it must be impossible to ship demo data as real verification output.
@@ -125,6 +133,10 @@ function generateGarbageLocal(): string {
  * NEVER sends the DATA command — this is a pure address probe.
  */
 export function probeSmtp(email: string, mxExchange: string): Promise<SmtpProbeResult> {
+    // No configured sender identity — never probe under a borrowed domain.
+    if (!SMTP_PROBING_ENABLED) {
+        return Promise.resolve({ code: null, status: 'UNKNOWN' as const, error: 'SMTP probing disabled (SMTP_HELO_DOMAIN unset)' });
+    }
     // CR1: Defense-in-depth — reject injection characters before SMTP write
     if (!isSmtpSafeEmail(email)) {
         return Promise.resolve({ code: null, status: 'INVALID' as const, error: 'Failed SMTP safety validation' });
@@ -229,6 +241,10 @@ export function probeSmtp(email: string, mxExchange: string): Promise<SmtpProbeR
  * reflecting our inability to verify.
  */
 async function isCatchAllDomain(domain: string, mxExchange: string): Promise<boolean> {
+    // No sender identity configured — this probes, so it must not run.
+    if (!SMTP_PROBING_ENABLED) {
+        return false;
+    }
     const garbageEmail = `${generateGarbageLocal()}@${domain}`;
     try {
         const result = await probeSmtp(garbageEmail, mxExchange);
@@ -282,6 +298,17 @@ export async function verifyEmail(email: string): Promise<EmailVerificationResul
 
         if (catchAll) {
             return { status: 'CATCH_ALL', mxProvider: provider, confidence: 40 };
+        }
+
+        // No sender identity configured — MX + syntax only. Never claim VALID/INVALID
+        // for a mailbox that was never probed.
+        if (!SMTP_PROBING_ENABLED) {
+            return {
+                status: 'UNKNOWN',
+                mxProvider: provider,
+                confidence: 25,
+                error: 'SMTP probing disabled (SMTP_HELO_DOMAIN unset) — domain-level verification only',
+            };
         }
 
         // SMTP RCPT TO probe for the real mailbox
