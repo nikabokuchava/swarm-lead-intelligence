@@ -47,6 +47,8 @@ docs/architecture-zipcode-brainstorm.md
 # Outreach / client data (never commit)
 day3-followups-ready.md
 generate-sample-csv.md
+exports/
+marketing/
 
 # Build artifacts & editor config
 .next/
