@@ -157,6 +157,16 @@ export async function processJob(taskId: string, headlessMode: boolean = true, e
                     }
                 });
                 logger.info(`🏁 Job ${job.id} Fully Completed. Total Leads: ${finalCount}`);
+                
+                // Refund unfilled credits if maxResults was greater than finalCount
+                if (job.maxResults && job.maxResults > finalCount && job.userId && job.userId !== 'admin') {
+                    try {
+                        const { refundUnusedCredits } = await import('./creditService.js');
+                        await refundUnusedCredits(job.userId, job.id, job.maxResults, finalCount);
+                    } catch (refundErr) {
+                        logger.error(`⚠️ Failed to refund unused credits for job ${job.id}:`, refundErr);
+                    }
+                }
             }
         });
 
