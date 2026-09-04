@@ -31,46 +31,51 @@ export async function findExistingCompany(name: string, address: string | null):
  */
 export async function createCompanyIfNotExists(data: CompanyData) {
     if (!data.userId || data.userId === 'admin') {
-        console.warn(`⚠️ Orphaned Company detected: "${data.name}" has no real userId (got: ${data.userId}). Check job ownership.`);
+        if (process.env.NODE_ENV !== 'production') {
+            console.warn(`⚠️ Orphaned Company detected: "${data.name}" has no real userId (got: ${data.userId}). Check job ownership.`);
+        }
     }
 
-    // Atomic find-and-create transaction to prevent TOCTOU race condition
-    return await prisma.$transaction(async (tx) => {
-        const existing = await tx.company.findFirst({
-            where: {
-                name: data.name,
-                address: data.address || undefined
+    try {
+        return await prisma.$transaction(async (tx) => {
+            try {
+                const company = await tx.company.create({
+                    data: {
+                        name: data.name,
+                        phone: data.phone,
+                        website: data.website,
+                        address: data.address,
+                        source: data.source,
+                        jobId: data.jobId,
+                        userId: data.userId || 'admin',
+                        rating: data.rating ?? null,
+                        reviewCount: data.reviewCount ?? null
+                    }
+                });
+
+                // Atomic increment: track real-time quota on parent job
+                if (data.jobId) {
+                    await tx.scrapeJob.update({
+                        where: { id: data.jobId },
+                        data: { resultsFound: { increment: 1 } }
+                    });
+                }
+
+                return { company, isDuplicate: false };
+            } catch (createErr: any) {
+                // Prisma unique constraint violation code is P2002
+                if (createErr.code === 'P2002') {
+                    return { company: null, isDuplicate: true };
+                }
+                throw createErr;
             }
         });
-
-        if (existing) {
+    } catch (err: any) {
+        if (err.code === 'P2002') {
             return { company: null, isDuplicate: true };
         }
-
-        const company = await tx.company.create({
-            data: {
-                name: data.name,
-                phone: data.phone,
-                website: data.website,
-                address: data.address,
-                source: data.source,
-                jobId: data.jobId,
-                userId: data.userId || 'admin',
-                rating: data.rating ?? null,
-                reviewCount: data.reviewCount ?? null
-            }
-        });
-
-        // Atomic increment: track real-time quota on parent job
-        if (data.jobId) {
-            await tx.scrapeJob.update({
-                where: { id: data.jobId },
-                data: { resultsFound: { increment: 1 } }
-            });
-        }
-
-        return { company, isDuplicate: false };
-    });
+        throw err;
+    }
 }
 
 /**
