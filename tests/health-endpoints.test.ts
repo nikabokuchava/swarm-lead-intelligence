@@ -79,6 +79,12 @@ describe('Poller Health Server Implementation', () => {
         expect(source).toContain('POLLER_HEALTH_PORT');
         expect(source).toMatch(/healthServer\.close\(\)/);
     });
+
+    it('uses createPollerHealthServer and attaches error listener in startPolling', () => {
+        const source = fs.readFileSync('src/services/jobPoller.ts', 'utf-8');
+        expect(source).toContain('const { server: healthServer, port: pollerHealthPort } = createPollerHealthServer();');
+        expect(source).toMatch(/healthServer\.on\('error'/);
+    });
 });
 
 describe('Docker Compose Healthchecks and Parameterization', () => {

@@ -80,15 +80,9 @@ export async function startPolling() {
     await cancelOrphanedPendingRecords();
 
     // Lightweight health check endpoint for container orchestrators (K8s, Docker)
-    const pollerHealthPort = parseInt(process.env.POLLER_HEALTH_PORT || '8081', 10);
-    const healthServer = http.createServer((_req, res) => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            status: 'ok',
-            service: 'job-poller',
-            pollerId: POLLER_ID,
-            uptime: process.uptime(),
-        }));
+    const { server: healthServer, port: pollerHealthPort } = createPollerHealthServer();
+    healthServer.on('error', (err) => {
+        logger.error('⚠️ Poller health server error:', err);
     });
     healthServer.listen(pollerHealthPort, () => {
         logger.info(`🏥 Poller health check listening on port ${pollerHealthPort}`);
