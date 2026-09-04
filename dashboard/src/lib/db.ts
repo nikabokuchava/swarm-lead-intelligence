@@ -5,7 +5,6 @@ import dotenv from 'dotenv';
 // Load environment variables from the root .env file
 dotenv.config({ path: path.resolve(process.cwd(), '../.env'), override: true });
 
-
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 export const prisma =
