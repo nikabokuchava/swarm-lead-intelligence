@@ -36,7 +36,7 @@ export default async function LeadsPage(props: LeadsPageProps) {
     if (job && job.userId === userId) jobName = job.query;
   }
 
-  const whereClause: Record<string, unknown> = { userId };
+  const whereClause: { userId: string; jobId?: string } = { userId };
   if (jobId) whereClause.jobId = jobId;
 
   const leads = await prisma.company.findMany({
