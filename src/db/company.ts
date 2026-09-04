@@ -62,16 +62,16 @@ export async function createCompanyIfNotExists(data: CompanyData) {
                 }
 
                 return { company, isDuplicate: false };
-            } catch (createErr: any) {
+            } catch (createErr: unknown) {
                 // Prisma unique constraint violation code is P2002
-                if (createErr.code === 'P2002') {
+                if (typeof createErr === 'object' && createErr !== null && 'code' in createErr && (createErr as { code: string }).code === 'P2002') {
                     return { company: null, isDuplicate: true };
                 }
                 throw createErr;
             }
         });
-    } catch (err: any) {
-        if (err.code === 'P2002') {
+    } catch (err: unknown) {
+        if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'P2002') {
             return { company: null, isDuplicate: true };
         }
         throw err;

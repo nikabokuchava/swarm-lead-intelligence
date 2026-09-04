@@ -69,7 +69,7 @@ describe('Worker Crash Loop Prevention', () => {
       if (inFlight) {
         try {
           await failJobOrRetry(inFlight.id, inFlight.retries, errorMsg);
-        } catch (releaseErr) {
+        } catch (_releaseErr) {
           // logged
         }
         inFlight = null;

@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { getOrCreateUser } from '@/lib/user';
 import { checkRateLimit } from '@/lib/rateLimit';
-import { reserveCreditsForJob, refundUnusedCredits } from '../../../src/services/creditService';
+import { reserveCreditsForJob, refundUnusedCredits } from '@/lib/creditService';
 
 // Server-side hardening caps — auditable, not reliant on UI input limits.
 const MAX_RESULTS = 500;      // hard cap on leads per job (UI max is advisory only)

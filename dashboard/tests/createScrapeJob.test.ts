@@ -22,7 +22,7 @@ vi.mock('@/lib/user', () => ({
     getOrCreateUser: vi.fn(async () => ({ clerkId: 'user_1', credits: 0 })),
 }));
 
-vi.mock('../../src/services/creditService', () => ({
+vi.mock('@/lib/creditService', () => ({
     reserveCreditsForJob: vi.fn(async () => true),
     refundUnusedCredits: vi.fn(async () => true),
 }));
@@ -33,7 +33,7 @@ vi.mock('next/cache', () => ({
 
 import { createScrapeJob } from '@/app/actions';
 import { prisma } from '@/lib/db';
-import { reserveCreditsForJob, refundUnusedCredits } from '../../src/services/creditService';
+import { reserveCreditsForJob, refundUnusedCredits } from '@/lib/creditService';
 import { auth } from '@clerk/nextjs/server';
 
 const mockPrisma = vi.mocked(prisma);

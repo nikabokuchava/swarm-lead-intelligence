@@ -1,4 +1,10 @@
 import { prisma } from '../db/prisma.js';
+import type { PrismaClient } from '@prisma/client';
+
+type PrismaTransactionClient = Omit<
+    PrismaClient,
+    '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
 
 /**
  * Atomically reserve credits when a scrape job is created.
@@ -8,12 +14,12 @@ export async function reserveCreditsForJob(
     clerkId: string, 
     amount: number, 
     jobId: string,
-    txClient?: any
+    txClient?: PrismaTransactionClient
 ): Promise<boolean> {
     // Admin user guard & non-positive amounts do not require credit reservation
     if (clerkId === 'admin' || amount <= 0) return true;
 
-    const executeReservation = async (tx: any) => {
+    const executeReservation = async (tx: PrismaTransactionClient) => {
         const update = await tx.user.updateMany({
             where: {
                 clerkId,
@@ -52,7 +58,7 @@ export async function reserveCreditsForJob(
         return executeReservation(txClient);
     }
 
-    if (typeof (prisma as any).$transaction === 'function') {
+    if ('$transaction' in prisma && typeof prisma.$transaction === 'function') {
         return prisma.$transaction(executeReservation);
     }
 
@@ -68,14 +74,14 @@ export async function refundUnusedCredits(
     jobId: string,
     reserved: number,
     actual: number,
-    txClient?: any
+    txClient?: PrismaTransactionClient
 ): Promise<void> {
     if (clerkId === 'admin') return;
 
     let refundAmount = reserved - actual;
     if (refundAmount <= 0) return;
 
-    const executeRefund = async (tx: any) => {
+    const executeRefund = async (tx: PrismaTransactionClient) => {
         // 1. Refund Idempotency: check if already refunded
         const existingRefund = await tx.creditLedger.findFirst({
             where: {
@@ -130,7 +136,7 @@ export async function refundUnusedCredits(
         return executeRefund(txClient);
     }
 
-    if (typeof (prisma as any).$transaction === 'function') {
+    if ('$transaction' in prisma && typeof prisma.$transaction === 'function') {
         return prisma.$transaction(executeRefund);
     }
 
