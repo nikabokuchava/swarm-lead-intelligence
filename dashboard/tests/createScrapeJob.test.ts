@@ -24,6 +24,7 @@ vi.mock('@/lib/user', () => ({
 
 vi.mock('../../src/services/creditService', () => ({
     reserveCreditsForJob: vi.fn(async () => true),
+    refundUnusedCredits: vi.fn(async () => true),
 }));
 
 vi.mock('next/cache', () => ({
@@ -32,13 +33,14 @@ vi.mock('next/cache', () => ({
 
 import { createScrapeJob } from '@/app/actions';
 import { prisma } from '@/lib/db';
-import { reserveCreditsForJob } from '../../src/services/creditService';
+import { reserveCreditsForJob, refundUnusedCredits } from '../../src/services/creditService';
 import { auth } from '@clerk/nextjs/server';
 
 const mockPrisma = vi.mocked(prisma);
 const createMock = mockPrisma.scrapeJob.create as unknown as Mock;
 const countMock = mockPrisma.scrapeJob.count as unknown as Mock;
 const reserveMock = reserveCreditsForJob as unknown as Mock;
+const refundMock = refundUnusedCredits as unknown as Mock;
 
 /** The subset of the `data` payload these tests assert on. */
 interface CreateData {
@@ -151,6 +153,17 @@ describe('createScrapeJob hardening', () => {
             ).rejects.toThrow('INSUFFICIENT_CREDITS');
 
             expect(createMock.mock.calls.length).toBe(createCountBefore);
+        });
+
+        it('refunds reserved credits if scrapeJob.create throws an error', async () => {
+            createMock.mockRejectedValueOnce(new Error('DB_CONNECTION_ERROR'));
+
+            await expect(
+                createScrapeJob(makeFormData({ query: 'plumbers', maxResults: '40' }))
+            ).rejects.toThrow('DB_CONNECTION_ERROR');
+
+            expect(reserveMock).toHaveBeenCalledWith('user_credit', 40, expect.any(String));
+            expect(refundMock).toHaveBeenCalledWith('user_credit', expect.any(String), 40, 0);
         });
     });
 });

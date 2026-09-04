@@ -1,5 +1,4 @@
 import { prisma } from '../db/prisma.js';
-import { recordCreditMutation } from '../db/creditLedger.js';
 
 /**
  * Atomically reserve credits when a scrape job is created.
