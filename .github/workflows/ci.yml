@@ -17,6 +17,7 @@ jobs:
     env:
       # Unit tests mock Prisma; no browser is launched, so skip the ~150 MB download.
       PUPPETEER_SKIP_DOWNLOAD: 'true'
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/postgres'
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +39,8 @@ jobs:
   dashboard:
     name: Dashboard — lint, test
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/postgres'
     defaults:
       run:
         working-directory: dashboard

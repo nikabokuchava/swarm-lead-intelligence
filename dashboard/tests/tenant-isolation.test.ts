@@ -20,21 +20,21 @@ describe('requireUserId Tenant Guard (Fail-Closed)', () => {
   });
 
   it('redirects to /sign-in when auth() returns null userId', async () => {
-    vi.mocked(auth).mockResolvedValue({ userId: null } as any);
+    vi.mocked(auth).mockResolvedValue({ userId: null } as unknown as Awaited<ReturnType<typeof auth>>);
 
     await expect(requireUserId()).rejects.toThrow('NEXT_REDIRECT:/sign-in');
     expect(redirect).toHaveBeenCalledWith('/sign-in');
   });
 
   it('redirects to /sign-in when auth() returns undefined session', async () => {
-    vi.mocked(auth).mockResolvedValue({} as any);
+    vi.mocked(auth).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof auth>>);
 
     await expect(requireUserId()).rejects.toThrow('NEXT_REDIRECT:/sign-in');
     expect(redirect).toHaveBeenCalledWith('/sign-in');
   });
 
   it('returns valid userId when authenticated', async () => {
-    vi.mocked(auth).mockResolvedValue({ userId: 'user_clerk_987' } as any);
+    vi.mocked(auth).mockResolvedValue({ userId: 'user_clerk_987' } as unknown as Awaited<ReturnType<typeof auth>>);
 
     const userId = await requireUserId();
     expect(userId).toBe('user_clerk_987');
