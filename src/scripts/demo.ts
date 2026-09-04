@@ -33,6 +33,7 @@ export async function runDemo(): Promise<void> {
     console.log(`🤖 Mode: Live Headless Crawl + LLM Extraction\n`);
 
     const browser = new StealthBrowser();
+    let hasError = false;
     try {
         console.log('⏳ Launching Stealth Browser...');
         await browser.launch();
@@ -76,19 +77,20 @@ export async function runDemo(): Promise<void> {
         console.log('   ✅ DEMO COMPLETE — PIPELINE RUN SUCCESSFUL');
         console.log('======================================================\n');
     } catch (err) {
+        hasError = true;
         console.error('❌ Demo error:', err);
     } finally {
         await browser.close();
         if (isDirectExecution) {
-            process.exit(0);
+            process.exit(hasError ? 1 : 0);
         }
     }
 }
 
 const isDirectExecution = Boolean(
     process.argv[1] && (
-        process.argv[1].endsWith('demo.ts') ||
-        process.argv[1].endsWith('demo.js') ||
+        path.basename(process.argv[1]) === 'demo.ts' ||
+        path.basename(process.argv[1]) === 'demo.js' ||
         fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
     )
 );
