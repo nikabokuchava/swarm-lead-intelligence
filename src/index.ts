@@ -1,4 +1,5 @@
 import { program } from 'commander';
+import { fileURLToPath } from 'url';
 import { config } from './config/index.js';
 import { createAppLogger } from './utils/logger.js';
 import { connectDB, disconnectDB, prisma } from './db/company.js';
@@ -17,9 +18,8 @@ program
     .option('--serve', 'Run as a background service (Job Poller)')
     .parse();
 
-const options = program.opts();
-
-async function main() {
+export async function main() {
+    const options = program.opts();
     try {
         await connectDB();
         logger.info('🔌 Connected to DB');
@@ -28,7 +28,6 @@ async function main() {
         if (options.serve) {
             logger.info('🚀 Starting in Service Mode (--serve)...');
             await startPolling();
-            // Keep process alive
             return; 
         }
 
@@ -68,10 +67,20 @@ async function main() {
         logger.error('❌ Fatal Error:', error);
         process.exit(1);
     } finally {
-        if (!options.serve) {
+        const currentOpts = program.opts();
+        if (!currentOpts.serve) {
             await disconnectDB();
         }
     }
 }
 
-main();
+// Only execute if called directly via CLI
+const isDirectExecution = process.argv[1] && (
+    process.argv[1].endsWith('index.ts') || 
+    process.argv[1].endsWith('index.js') ||
+    fileURLToPath(import.meta.url) === process.argv[1]
+);
+
+if (isDirectExecution) {
+    main();
+}

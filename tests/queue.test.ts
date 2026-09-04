@@ -284,18 +284,17 @@ describe('Queue System', () => {
                 scrapeJob: { id: 'job-1', userId: 'user-1' }
             });
 
-            // Use dynamic import so earlier isolated tests aren't affected by module load side-effects
             const { processJob } = await import('../src/services/scraperService');
             await processJob('task-1', true);
 
-            (expect(mockTx.scrapeJob.update) as any).toHaveBeenCalledWith({
+            expect(mockTx.scrapeJob.update).toHaveBeenCalledWith({
                 where: { id: 'job-1' },
                 data: expect.objectContaining({
                     status: 'COMPLETED',
                     resultsFound: 42
                 })
             });
-            (expect(mockTx.company.count) as any).toHaveBeenCalledWith({ where: { jobId: 'job-1' } });
+            expect(mockTx.company.count).toHaveBeenCalledWith({ where: { jobId: 'job-1' } });
         });
     });
 });

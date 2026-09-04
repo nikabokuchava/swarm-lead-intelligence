@@ -40,7 +40,6 @@ vi.mock('../src/db/company.js', () => ({
 }));
 
 describe('CLI Task Creation', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let originalExit: any;
 
     beforeEach(() => {
@@ -51,13 +50,11 @@ describe('CLI Task Creation', () => {
 
     afterEach(() => {
         Object.defineProperty(process, 'exit', { value: originalExit, writable: true });
-        vi.resetModules(); 
     });
 
     it('should create a ScrapeJob and a corresponding ScrapeTask when run from CLI', async () => {
-        await import('../src/index');
-
-        await new Promise(resolve => setTimeout(resolve, 0));
+        const { main } = await import('../src/index.js');
+        await main();
 
         expect(mockCreateJob).toHaveBeenCalledWith(expect.objectContaining({
             data: expect.objectContaining({
