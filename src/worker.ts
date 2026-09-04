@@ -310,11 +310,12 @@ async function runWorker() {
 
             } catch (loopError) {
                 // Transient per-job error — release the claimed row, rotate browser, continue
+                const errorMsg = loopError instanceof Error ? loopError.message : String(loopError);
                 logger.error('💥 Error processing job — rotating browser:', loopError);
                 if (inFlight) {
                     try {
-                        await failJobOrRetry(inFlight.id, inFlight.retries, loopError instanceof Error ? loopError.message : String(loopError));
-                        logger.info(`🔓 Released claimed company ${inFlight.id} after crash`);
+                        await failJobOrRetry(inFlight.id, inFlight.retries, errorMsg);
+                        logger.info(`🔓 Released claimed company ${inFlight.id} after crash (retries was: ${inFlight.retries})`);
                     } catch (releaseErr) {
                         logger.error('⚠️ Could not release claimed company after crash:', releaseErr);
                     }
