@@ -37,6 +37,7 @@ async function claimNextTask(): Promise<string | null> {
             SELECT id
             FROM "scrape_tasks"
             WHERE status = 'PENDING'
+              AND ("next_attempt_at" IS NULL OR "next_attempt_at" <= NOW())
             ORDER BY "created_at" ASC
             LIMIT 1
             FOR UPDATE SKIP LOCKED

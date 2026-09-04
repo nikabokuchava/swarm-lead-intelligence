@@ -131,12 +131,12 @@ describe('Queue System', () => {
 
             expect(mockPrisma.company.update).toHaveBeenCalledWith({
                 where: { id: 'company-1' },
-                data: {
+                data: expect.objectContaining({
                     status: 'PENDING',
                     workerId: null,
                     lockedAt: null,
                     retries: { increment: 1 },
-                },
+                }),
             });
         });
 
@@ -159,12 +159,12 @@ describe('Queue System', () => {
             await failJobOrRetry('company-x', 2);
             expect(mockPrisma.company.update).toHaveBeenCalledWith({
                 where: { id: 'company-x' },
-                data: {
+                data: expect.objectContaining({
                     status: 'PENDING',
                     workerId: null,
                     lockedAt: null,
                     retries: { increment: 1 },
-                },
+                }),
             });
 
             vi.clearAllMocks();

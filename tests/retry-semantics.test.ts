@@ -39,7 +39,7 @@ vi.mock('../src/scraper/stealthBrowser', () => ({
     }
 }));
 
-import { getNextPendingLead, failJobOrRetry } from '../src/db/queue';
+import { getNextPendingLead, failJobOrRetry, computeBackoffDelayMs } from '../src/db/queue';
 import { prisma } from '../src/db/prisma';
 
 const mockPrisma = vi.mocked(prisma);
@@ -105,8 +105,63 @@ describe('Retry counter semantics (E)', () => {
         });
     });
 
-    // Backoff/jitter is NOT supported: no `nextAttemptAt`/scheduler field exists in the
-    // schema and failed records are reset to PENDING immediately. Captured as a pending
-    // test per Vitest convention; document the gap rather than refactor this pass.
-    it.todo('applies a backoff/jitter delay between retries (no scheduling field exists yet)');
+    describe('backoff and jitter on retry', () => {
+        it('computeBackoffDelayMs computes exponential delay with jitter and caps at 300s', () => {
+            // retry 0: 5000 * 1 + [0..1000) => [5000, 6000)
+            const delay0 = computeBackoffDelayMs(0);
+            expect(delay0).toBeGreaterThanOrEqual(5000);
+            expect(delay0).toBeLessThan(6000);
+
+            // retry 1: 5000 * 2 + [0..1000) => [10000, 11000)
+            const delay1 = computeBackoffDelayMs(1);
+            expect(delay1).toBeGreaterThanOrEqual(10000);
+            expect(delay1).toBeLessThan(11000);
+
+            // retry 2: 5000 * 4 + [0..1000) => [20000, 21000)
+            const delay2 = computeBackoffDelayMs(2);
+            expect(delay2).toBeGreaterThanOrEqual(20000);
+            expect(delay2).toBeLessThan(21000);
+
+            // retry 10: 5000 * 1024 + jitter => capped at 300_000
+            const delay10 = computeBackoffDelayMs(10);
+            expect(delay10).toBe(300_000);
+        });
+
+        it('failJobOrRetry sets nextAttemptAt in the future and increments attemptCount', async () => {
+            (mockPrisma.company.update as any).mockResolvedValue({});
+            const before = Date.now();
+
+            await failJobOrRetry('company-backoff-1', 1, 'Transient error');
+
+            const call = (mockPrisma.company.update as any).mock.calls[0][0];
+            expect(call.where).toEqual({ id: 'company-backoff-1' });
+            expect(call.data.status).toBe('PENDING');
+            expect(call.data.retries).toEqual({ increment: 1 });
+            expect(call.data.attemptCount).toEqual({ increment: 1 });
+            expect(call.data.nextAttemptAt).toBeInstanceOf(Date);
+            expect(call.data.nextAttemptAt.getTime()).toBeGreaterThanOrEqual(before + 4000);
+        });
+
+        it('failJobOrRetry respects explicit delayMs override when provided', async () => {
+            (mockPrisma.company.update as any).mockResolvedValue({});
+            const before = Date.now();
+
+            await failJobOrRetry('company-backoff-2', 0, 'Rate limit error', 60_000);
+
+            const call = (mockPrisma.company.update as any).mock.calls[0][0];
+            expect(call.where).toEqual({ id: 'company-backoff-2' });
+            expect(call.data.nextAttemptAt.getTime()).toBeGreaterThanOrEqual(before + 60_000);
+            expect(call.data.nextAttemptAt.getTime()).toBeLessThanOrEqual(before + 61_000);
+        });
+
+        it('getNextPendingLead claim SQL filters on next_attempt_at <= NOW()', async () => {
+            (mockPrisma.$queryRaw as any).mockResolvedValue([]);
+
+            await getNextPendingLead('worker-backoff');
+
+            const call = (mockPrisma.$queryRaw as any).mock.calls[0];
+            const sql = (call[0] as string[]).join(' ').toLowerCase();
+            expect(sql).toContain('next_attempt_at');
+        });
+    });
 });
