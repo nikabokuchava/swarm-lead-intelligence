@@ -9,6 +9,7 @@ import { prisma } from './db/company.js';
 import * as crypto from 'crypto';
 import { createAppLogger } from './utils/logger.js';
 import * as http from 'http';
+import { fileURLToPath } from 'url';
 
 const logger = createAppLogger('worker.log');
 
@@ -310,11 +311,12 @@ async function runWorker() {
 
             } catch (loopError) {
                 // Transient per-job error — release the claimed row, rotate browser, continue
+                const errorMsg = loopError instanceof Error ? loopError.message : String(loopError);
                 logger.error('💥 Error processing job — rotating browser:', loopError);
                 if (inFlight) {
                     try {
-                        await failJobOrRetry(inFlight.id, inFlight.retries, loopError instanceof Error ? loopError.message : String(loopError));
-                        logger.info(`🔓 Released claimed company ${inFlight.id} after crash`);
+                        await failJobOrRetry(inFlight.id, inFlight.retries, errorMsg);
+                        logger.info(`🔓 Released claimed company ${inFlight.id} after crash (retries was: ${inFlight.retries})`);
                     } catch (releaseErr) {
                         logger.error('⚠️ Could not release claimed company after crash:', releaseErr);
                     }
@@ -336,9 +338,16 @@ async function runWorker() {
     }
 }
 
-// Check if run directly (ESM pattern)
-// Simplified: Just run it. We don't import this file as a module elsewhere.
-runWorker();
+// Only execute if called directly via CLI
+const isDirectExecution = process.argv[1] && (
+    process.argv[1].endsWith('worker.ts') || 
+    process.argv[1].endsWith('worker.js') ||
+    fileURLToPath(import.meta.url) === process.argv[1]
+);
 
-export { runWorker }; // Export for testing
+if (isDirectExecution) {
+    runWorker();
+}
+
+export { runWorker };
 

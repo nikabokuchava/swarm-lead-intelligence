@@ -19,6 +19,8 @@ interface CompanyRawRow {
     worker_id: string | null;
     locked_at: Date | null;
     retries: number;
+    attempt_count: number;
+    next_attempt_at: Date | null;
     failure_reason: string | null;
     failed_at: Date | null;
     job_id: string | null;
@@ -44,6 +46,8 @@ function mapRawToCompany(row: CompanyRawRow): Company {
         workerId: row.worker_id,
         lockedAt: row.locked_at,
         retries: row.retries,
+        attemptCount: row.attempt_count ?? 0,
+        nextAttemptAt: row.next_attempt_at ?? null,
         failureReason: row.failure_reason,
         failedAt: row.failed_at,
         jobId: row.job_id,
@@ -68,6 +72,7 @@ export async function getNextPendingLead(workerId: string): Promise<Company | nu
                 SELECT id
                 FROM "companies"
                 WHERE status = 'PENDING'
+                  AND ("next_attempt_at" IS NULL OR "next_attempt_at" <= NOW())
                 ORDER BY "created_at" ASC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -212,14 +217,23 @@ export async function cancelOrphanedPendingRecords(): Promise<{ tasks: number; c
     return { tasks: taskResult.count, companies: companyResult.count };
 }
 
-/**
- * Handle job failure: retry if under limit, fail otherwise.
- */
-export async function failJobOrRetry(companyId: string, currentRetries: number, errorMessage?: string) {
+export function computeBackoffDelayMs(currentRetries: number): number {
+    const baseDelayMs = 5000;
+    const maxDelayMs = 300_000; // 5 minutes cap
+    const exponential = baseDelayMs * Math.pow(2, currentRetries);
+    const jitter = Math.floor(Math.random() * 1000);
+    return Math.min(maxDelayMs, exponential + jitter);
+}
+
+export async function failJobOrRetry(
+    companyId: string, 
+    currentRetries: number, 
+    errorMessage?: string,
+    delayMs?: number
+) {
     const MAX_RETRIES = 3;
 
     if (currentRetries >= MAX_RETRIES) {
-        // Hard fail — persist the reason + timestamp so failures aren't silently discarded.
         await prisma.company.update({
             where: { id: companyId },
             data: {
@@ -229,14 +243,18 @@ export async function failJobOrRetry(companyId: string, currentRetries: number, 
             }
         });
     } else {
-        // Release back to queue with atomic retry increment
+        const delay = delayMs ?? computeBackoffDelayMs(currentRetries);
+        const nextAttemptAt = new Date(Date.now() + delay);
+
         await prisma.company.update({
             where: { id: companyId },
             data: {
                 status: 'PENDING',
                 workerId: null,
                 lockedAt: null,
-                retries: { increment: 1 }
+                retries: { increment: 1 },
+                attemptCount: { increment: 1 },
+                nextAttemptAt: nextAttemptAt,
             }
         });
     }

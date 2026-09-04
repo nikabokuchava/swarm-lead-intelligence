@@ -7,8 +7,9 @@ import { redirect } from 'next/navigation';
  * Never fall back to an unscoped ({}) Prisma filter — that reads every tenant's rows.
  */
 export async function requireUserId(): Promise<string> {
-  const { userId } = await auth();
-  if (!userId) {
+  const session = await auth();
+  const userId = session?.userId;
+  if (!userId || typeof userId !== 'string' || userId.trim() === '') {
     redirect('/sign-in');
   }
   return userId;

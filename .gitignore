@@ -58,3 +58,5 @@ samples/
 
 # Local AI-agent config (not part of the PR)
 CLAUDE.md
+AGENTS.md
+.claude/

@@ -9,7 +9,9 @@ type Browser = Awaited<ReturnType<typeof Puppeteer.launch>>;
 type Page = Awaited<ReturnType<Browser['newPage']>>;
 
 // Standalone puppeteer instance (only used when no StealthBrowser is injected)
-const standalonePuppeteer = (puppeteerExtra.default || puppeteerExtra) as any;
+// CJS/ESM interop: the default export is sometimes nested under `.default`.
+type PuppeteerExtra = typeof puppeteerExtra & { default?: typeof puppeteerExtra };
+const standalonePuppeteer = (puppeteerExtra as PuppeteerExtra).default || puppeteerExtra;
 standalonePuppeteer.use(StealthPlugin());
 
 const logger = createAppLogger();

@@ -25,7 +25,8 @@
     "reset-tasks": "tsx src/scripts/reset_tasks.ts",
     "scrape:test": "tsx src/scripts/trigger-test-scrape.ts",
     "scrape:hvac": "tsx src/scripts/trigger-hvac-campaign.ts",
-    "scrape:miami": "tsx src/scripts/trigger-miami-hvac.ts"
+    "scrape:miami": "tsx src/scripts/trigger-miami-hvac.ts",
+    "demo": "tsx src/scripts/demo.ts"
   },
   "keywords": [],
   "author": "",

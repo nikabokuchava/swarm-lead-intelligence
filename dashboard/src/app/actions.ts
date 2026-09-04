@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { getOrCreateUser } from '@/lib/user';
 import { checkRateLimit } from '@/lib/rateLimit';
+import { reserveCreditsForJob, refundUnusedCredits } from '@/lib/creditService';
 
 // Server-side hardening caps — auditable, not reliant on UI input limits.
 const MAX_RESULTS = 500;      // hard cap on leads per job (UI max is advisory only)
@@ -22,35 +23,48 @@ export async function createScrapeJob(formData: FormData) {
 
   // Abuse/cost guard: rate-limit job creation per user before any DB work.
   if (!checkRateLimit(`job-create:${userId}`, MAX_JOBS_PER_MIN).allowed) {
-    throw new Error('Too many jobs created. Please wait a minute and try again.');
+    throw new Error("RATE_LIMITED: Too many jobs created. Please wait a minute before launching another.");
   }
 
-  const email = clerkUser.emailAddresses[0]?.emailAddress ?? '';
-  await getOrCreateUser(userId, email);
+  // Always provision a local User row for the authenticated Clerk user (idempotent).
+  const primaryEmail = clerkUser.emailAddresses[0]?.emailAddress ?? null;
+  await getOrCreateUser(userId, primaryEmail);
 
-  const query = formData.get('query') as string;
-  // Clamp maxResults to a safe server-side range (negative/0/NaN -> default 20).
-  const rawMaxResults = Number(formData.get('maxResults'));
-  const maxResults = Number.isFinite(rawMaxResults) && rawMaxResults > 0
-    ? Math.min(Math.floor(rawMaxResults), MAX_RESULTS)
-    : 20;
-  const zipCodesRaw = formData.get('zipCodes') as string | null;
+  // Parse and validate raw form data
+  const rawQuery = (formData.get('query') as string) || '';
+  const rawMaxResults = parseInt((formData.get('maxResults') as string) || '50', 10);
+  const zipCodesRaw = (formData.get('zipCodes') as string) || '';
 
-  if (!query || query.trim() === '') {
-    throw new Error('Query is required');
+  const query = rawQuery.trim();
+  if (!query) {
+    throw new Error("Validation Error: Search query is required.");
   }
 
-  // Parse zip codes from comma separated list, then cap task fan-out.
-  const zipCodes = (zipCodesRaw
-    ? zipCodesRaw.split(',').map(z => z.trim()).filter(Boolean)
-    : []
-  ).slice(0, MAX_TASKS);
+  // Hard caps on user-controlled numerical inputs.
+  // Never trust the client UI slider to enforce billing / task caps.
+  const maxResults = Math.min(
+    Math.max(1, isNaN(rawMaxResults) ? 50 : rawMaxResults),
+    MAX_RESULTS
+  );
+
+  const zipCodes = zipCodesRaw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .slice(0, MAX_TASKS); // cap fan-out to prevent worker queue flooding
+
+  const jobId = crypto.randomUUID();
+
+  // Atomically reserve credits for maxResults leads before creating the job.
+  // Throws INSUFFICIENT_CREDITS if user balance is insufficient.
+  await reserveCreditsForJob(userId, maxResults, jobId);
 
   // 2. ვქმნით ჯობს კონკრეტული userId-ით
   try {
     console.log(`[ACTION] Attempting to create scrape job for query: "${query}", maxResults: ${maxResults}, userId: ${userId}`);
     const job = await prisma.scrapeJob.create({
       data: {
+        id: jobId,
         query,
         maxResults,
         // Entitlement is NOT trusted from the client. No server-side entitlement
@@ -72,6 +86,11 @@ export async function createScrapeJob(formData: FormData) {
     console.log(`[ACTION] Successfully created job ${job.id} with ${zipCodes.length || 1} tasks for user ${userId}`);
   } catch (err) {
     console.error(`[ACTION] Error creating scrape job:`, err);
+    try {
+      await refundUnusedCredits(userId, jobId, maxResults, 0);
+    } catch (refundErr) {
+      console.error(`[ACTION] Failed to refund reserved credits after job creation failure:`, refundErr);
+    }
     throw err;
   }
 

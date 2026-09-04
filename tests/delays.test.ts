@@ -18,7 +18,7 @@ describe('StealthBrowser Simulation Delays', () => {
         const mockPage = {
             mouse: { move: vi.fn().mockResolvedValue(undefined) },
             evaluate: vi.fn().mockResolvedValue(undefined)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         } as any;
 
         const promise = stealthBrowser.simulateHuman(mockPage, 'low');
@@ -37,7 +37,7 @@ describe('StealthBrowser Simulation Delays', () => {
          const mockPage = {
             mouse: { move: vi.fn().mockResolvedValue(undefined) },
             evaluate: vi.fn().mockResolvedValue(undefined)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         } as any;
 
         const promise = stealthBrowser.simulateHuman(mockPage, 'high');

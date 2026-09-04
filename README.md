@@ -63,24 +63,36 @@ Each item maps to code you can read and tests you can run:
 
 Dashboard and Worker are **fully decoupled**. They share nothing except PostgreSQL.
 
-```
-┌─────────────────────┐         ┌──────────────────────────────┐
-│   Next.js 16        │         │   Node.js Worker             │
-│   Dashboard         │         │                              │
-│                     │         │   ┌──────────────────────┐   │
-│   Clerk Auth        │         │   │ Job Poller            │   │
-│   Stripe Billing    │   PG    │   │ FOR UPDATE SKIP LOCKED│   │
-│   SSE Live Updates  │◄───────►│   └──────────┬───────────┘   │
-│   CSV Export        │  Queue  │              │               │
-│                     │         │   ┌──────────▼───────────┐   │
-│   /api/jobs/stream  │         │   │ Maps Scraper         │   │
-│   /api/leads/export │         │   │ Website Crawler       │   │
-│   /api/health       │         │   │ Email Validator (MX) │   │
-└─────────────────────┘         │   │ Gemini C-Level Infer  │   │
-                                │   └──────────────────────┘   │
-                                │                              │
-                                │   Health: :8080/health       │
-                                └──────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Frontend [Next.js 16 Dashboard]
+        UI[App Router & Server Actions]
+        Auth[Clerk Tenant Auth - Fail Closed]
+        SSE[Live SSE Stream /api/jobs/stream]
+    end
+
+    subgraph Database [PostgreSQL 15]
+        Queue[(SKIP LOCKED Queue)]
+        Ledger[(Credit Ledger)]
+        Companies[(Companies - Partial Unique Index)]
+    end
+
+    subgraph Workers [Autonomous Node.js Workers]
+        Poller[Job Poller / Maps Scraper]
+        Worker[Email Worker / Website Crawler]
+        LLM[Gemini 2.5 Flash Hybrid Parser]
+        Verifier[DNS/MX + SMTP Verifier]
+    end
+
+    UI -->|Create Job & Reserve Credits| Queue
+    UI -->|Record Mutation| Ledger
+    Poller -->|Claim Task FOR UPDATE SKIP LOCKED| Queue
+    Poller -->|Insert Leads ON CONFLICT DO NOTHING| Companies
+    Worker -->|Claim Company FOR UPDATE SKIP LOCKED| Queue
+    Worker -->|Extract Content| LLM
+    Worker -->|Validate Deliverability| Verifier
+    Worker -->|Write Verified Contacts| Companies
+    SSE -.->|Poll Live Status| Queue
 ```
 
 **Key design decisions:**
@@ -216,6 +228,9 @@ npm run reset-tasks         # Reset stuck tasks to PENDING
 - [VPS Deployment](docs/VPS-DEPLOYMENT.md)
 - [Environment Variables](docs/ENVIRONMENT.md)
 - [API Reference](docs/API_REFERENCE.md)
+- [Legal & Compliance Posture](docs/COMPLIANCE.md)
+- [Terms of Service Template](docs/TERMS_TEMPLATE.md)
+- [Data Privacy Policy Template](docs/PRIVACY_TEMPLATE.md)
 
 ---
 

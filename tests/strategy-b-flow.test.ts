@@ -252,12 +252,12 @@ describe('Strategy B: Map Scraping -> Database Queue -> Email Extraction Flow', 
 
         expect(mockPrisma.company.update).toHaveBeenCalledWith({
             where: { id: mockCompanyId },
-            data: {
+            data: expect.objectContaining({
                 status: 'PENDING',
                 workerId: null,
                 lockedAt: null,
                 retries: { increment: 1 },
-            }
+            })
         });
 
         await failJobOrRetry(mockCompanyId, 3, 'Fatal WebGL crash');

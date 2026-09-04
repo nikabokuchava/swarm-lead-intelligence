@@ -192,7 +192,7 @@ export default function LandingPage() {
                         <Search className="w-10 h-10 text-amber-500" />
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">1. Search</h3>
-                    <p className="text-zinc-400 text-sm">Enter a niche and location. <br/>Ex: "Dentists in New York"</p>
+                    <p className="text-zinc-400 text-sm">Enter a niche and location. <br/>Ex: &quot;Dentists in New York&quot;</p>
                 </div>
 
                 {/* Step 2 */}

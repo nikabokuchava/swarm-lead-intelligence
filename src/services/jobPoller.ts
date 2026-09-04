@@ -4,6 +4,7 @@ import { processJob } from './scraperService.js';
 import { config } from '../config/index.js';
 import { StealthBrowser } from '../scraper/stealthBrowser.js';
 import * as crypto from 'crypto';
+import * as http from 'http';
 import { createAppLogger } from '../utils/logger.js';
 
 const logger = createAppLogger();
@@ -15,7 +16,21 @@ const FAILURE_COOLDOWN_MS = 30_000; // 30s cooldown after repeated failures
 /** Rotate browser every N jobs to prevent Chromium memory leaks */
 const JOBS_PER_BROWSER_SESSION = 50;
 
-const POLLER_ID = `poller-${crypto.randomUUID().substring(0, 8)}`;
+export const POLLER_ID = `poller-${crypto.randomUUID().substring(0, 8)}`;
+
+export function createPollerHealthServer(port?: number) {
+    const pollerHealthPort = port ?? parseInt(process.env.POLLER_HEALTH_PORT || '8081', 10);
+    const server = http.createServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            status: 'ok',
+            service: 'job-poller',
+            pollerId: POLLER_ID,
+            uptime: process.uptime(),
+        }));
+    });
+    return { server, port: pollerHealthPort };
+}
 
 async function createBrowser(): Promise<StealthBrowser> {
     const b = new StealthBrowser();
@@ -37,6 +52,7 @@ async function claimNextTask(): Promise<string | null> {
             SELECT id
             FROM "scrape_tasks"
             WHERE status = 'PENDING'
+              AND ("next_attempt_at" IS NULL OR "next_attempt_at" <= NOW())
             ORDER BY "created_at" ASC
             LIMIT 1
             FOR UPDATE SKIP LOCKED
@@ -62,6 +78,15 @@ export async function startPolling() {
     await recoverStaleLocks();
     // Cancel orphaned PENDING tasks/companies whose parent job already terminated
     await cancelOrphanedPendingRecords();
+
+    // Lightweight health check endpoint for container orchestrators (K8s, Docker)
+    const { server: healthServer, port: pollerHealthPort } = createPollerHealthServer();
+    healthServer.on('error', (err) => {
+        logger.error('⚠️ Poller health server error:', err);
+    });
+    healthServer.listen(pollerHealthPort, () => {
+        logger.info(`🏥 Poller health check listening on port ${pollerHealthPort}`);
+    });
 
     let consecutiveFailures = 0;
     let isShuttingDown = false;
@@ -104,6 +129,9 @@ export async function startPolling() {
         }
         try {
             await browser.close();
+        } catch { /* best-effort */ }
+        try {
+            healthServer.close();
         } catch { /* best-effort */ }
     };
     process.on('SIGINT', shutdown);
