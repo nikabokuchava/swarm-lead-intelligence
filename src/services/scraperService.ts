@@ -162,7 +162,7 @@ export async function processJob(taskId: string, headlessMode: boolean = true, e
                 if (job.maxResults && job.maxResults > finalCount && job.userId && job.userId !== 'admin') {
                     try {
                         const { refundUnusedCredits } = await import('./creditService.js');
-                        await refundUnusedCredits(job.userId, job.id, job.maxResults, finalCount);
+                        await refundUnusedCredits(job.userId, job.id, job.maxResults, finalCount, tx);
                     } catch (refundErr) {
                         logger.error(`⚠️ Failed to refund unused credits for job ${job.id}:`, refundErr);
                     }

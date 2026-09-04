@@ -8,61 +8,132 @@ import { recordCreditMutation } from '../db/creditLedger.js';
 export async function reserveCreditsForJob(
     clerkId: string, 
     amount: number, 
-    jobId: string
+    jobId: string,
+    txClient?: any
 ): Promise<boolean> {
-    if (amount <= 0) return true;
+    // Admin user guard & non-positive amounts do not require credit reservation
+    if (clerkId === 'admin' || amount <= 0) return true;
 
-    const update = await prisma.user.updateMany({
-        where: {
-            clerkId,
-            credits: { gte: amount }
-        },
-        data: {
-            credits: { decrement: amount }
+    const executeReservation = async (tx: any) => {
+        const update = await tx.user.updateMany({
+            where: {
+                clerkId,
+                credits: { gte: amount }
+            },
+            data: {
+                credits: { decrement: amount }
+            }
+        });
+
+        if (update.count === 0) {
+            throw new Error('INSUFFICIENT_CREDITS');
         }
-    });
 
-    if (update.count === 0) {
-        throw new Error('INSUFFICIENT_CREDITS');
+        const user = await tx.user.findUnique({
+            where: { clerkId },
+            select: { id: true }
+        });
+
+        if (user) {
+            await tx.creditLedger.create({
+                data: {
+                    clerkId,
+                    userId: user.id,
+                    delta: -amount,
+                    reason: 'job_reserved',
+                    refId: jobId
+                }
+            });
+        }
+
+        return true;
+    };
+
+    if (txClient) {
+        return executeReservation(txClient);
     }
 
-    const user = await prisma.user.findUnique({
-        where: { clerkId },
-        select: { id: true }
-    });
-
-    if (user) {
-        await recordCreditMutation(clerkId, user.id, -amount, 'job_reserved', jobId);
+    if (typeof (prisma as any).$transaction === 'function') {
+        return prisma.$transaction(executeReservation);
     }
 
-    return true;
+    return executeReservation(prisma);
 }
 
 /**
  * Refund unconsumed credits if actual leads extracted is less than reserved amount.
+ * Verifies that credits were actually reserved for this jobId and ensures idempotency.
  */
 export async function refundUnusedCredits(
     clerkId: string,
     jobId: string,
     reserved: number,
-    actual: number
+    actual: number,
+    txClient?: any
 ): Promise<void> {
-    const refundAmount = reserved - actual;
+    if (clerkId === 'admin') return;
+
+    let refundAmount = reserved - actual;
     if (refundAmount <= 0) return;
 
-    const user = await prisma.user.findUnique({
-        where: { clerkId },
-        select: { id: true }
-    });
+    const executeRefund = async (tx: any) => {
+        // 1. Refund Idempotency: check if already refunded
+        const existingRefund = await tx.creditLedger.findFirst({
+            where: {
+                refId: jobId,
+                reason: 'refund_unfilled_quota'
+            }
+        });
+        if (existingRefund) return;
 
-    if (!user) return;
+        // 2. Prevent Infinite Credit Minting / Exploit: check that reservation exists
+        const reservationRecord = await tx.creditLedger.findFirst({
+            where: {
+                refId: jobId,
+                reason: 'job_reserved'
+            }
+        });
+        if (!reservationRecord) return;
 
-    await prisma.user.updateMany({
-        where: { clerkId },
-        data: {
-            credits: { increment: refundAmount }
+        // Ensure refund amount does not exceed what was actually reserved
+        const maxRefundable = Math.abs(reservationRecord.delta);
+        if (refundAmount > maxRefundable) {
+            refundAmount = maxRefundable;
         }
-    });
+        if (refundAmount <= 0) return;
 
-    await recordCreditMutation(clerkId, user.id, refundAmount, 'refund_unfilled_quota', jobId);
+        const user = await tx.user.findUnique({
+            where: { clerkId },
+            select: { id: true }
+        });
+
+        if (!user) return;
+
+        await tx.user.updateMany({
+            where: { clerkId },
+            data: {
+                credits: { increment: refundAmount }
+            }
+        });
+
+        await tx.creditLedger.create({
+            data: {
+                clerkId,
+                userId: user.id,
+                delta: refundAmount,
+                reason: 'refund_unfilled_quota',
+                refId: jobId
+            }
+        });
+    };
+
+    if (txClient) {
+        return executeRefund(txClient);
+    }
+
+    if (typeof (prisma as any).$transaction === 'function') {
+        return prisma.$transaction(executeRefund);
+    }
+
+    return executeRefund(prisma);
 }

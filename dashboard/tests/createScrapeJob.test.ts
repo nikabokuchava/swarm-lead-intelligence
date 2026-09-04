@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Mock } from 'vitest';
 
 // --- Mock the Server Action's collaborators (hoisted before import) ---
 vi.mock('@clerk/nextjs/server', () => ({
@@ -21,14 +22,30 @@ vi.mock('@/lib/user', () => ({
     getOrCreateUser: vi.fn(async () => ({ clerkId: 'user_1', credits: 0 })),
 }));
 
+vi.mock('../../src/services/creditService', () => ({
+    reserveCreditsForJob: vi.fn(async () => true),
+}));
+
 vi.mock('next/cache', () => ({
     revalidatePath: vi.fn(),
 }));
 
 import { createScrapeJob } from '@/app/actions';
 import { prisma } from '@/lib/db';
+import { reserveCreditsForJob } from '../../src/services/creditService';
+import { auth } from '@clerk/nextjs/server';
 
 const mockPrisma = vi.mocked(prisma);
+const createMock = mockPrisma.scrapeJob.create as unknown as Mock;
+const countMock = mockPrisma.scrapeJob.count as unknown as Mock;
+const reserveMock = reserveCreditsForJob as unknown as Mock;
+
+/** The subset of the `data` payload these tests assert on. */
+interface CreateData {
+    maxResults: number;
+    isPremium: boolean;
+    tasks: { create: unknown[] };
+}
 
 // Hardening caps enforced by the server action (see dashboard/src/app/actions.ts).
 const MAX_RESULTS_CAP = 500;
@@ -42,16 +59,17 @@ function makeFormData(fields: Record<string, string>): FormData {
 }
 
 /** Return the `data` object passed to the most recent scrapeJob.create() call. */
-function lastCreateData(): any {
-    const calls = (mockPrisma.scrapeJob.create as any).mock.calls;
+function lastCreateData(): CreateData {
+    const calls = createMock.mock.calls;
     return calls[calls.length - 1]?.[0]?.data;
 }
 
 describe('createScrapeJob hardening', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        (mockPrisma.scrapeJob.create as any).mockResolvedValue({ id: 'job-1' });
-        (mockPrisma.scrapeJob.count as any).mockResolvedValue(0);
+        createMock.mockResolvedValue({ id: 'job-1' });
+        countMock.mockResolvedValue(0);
+        reserveMock.mockResolvedValue(true);
     });
 
     describe('A — input caps', () => {
@@ -100,18 +118,39 @@ describe('createScrapeJob hardening', () => {
             for (let i = 0; i < JOB_RATE_LIMIT_PER_MIN; i++) {
                 await createScrapeJob(makeFormData({ query: `q${i}` })).catch(() => {});
             }
-            const createCountBefore = (mockPrisma.scrapeJob.create as any).mock.calls.length;
+            const createCountBefore = createMock.mock.calls.length;
 
             await expect(
                 createScrapeJob(makeFormData({ query: 'over-limit' }))
             ).rejects.toThrow();
 
             // The blocked call must not have reached the database.
-            expect((mockPrisma.scrapeJob.create as any).mock.calls.length).toBe(
-                createCountBefore
-            );
+            expect(createMock.mock.calls.length).toBe(createCountBefore);
             // createScrapeJob enforces this via checkRateLimit(`job-create:${userId}`,
             // MAX_JOBS_PER_MIN) before any DB write (dashboard/src/app/actions.ts).
+        });
+    });
+
+    describe('D — credit reservation at job creation', () => {
+        beforeEach(() => {
+            (auth as unknown as Mock).mockResolvedValue({ userId: 'user_credit' });
+        });
+
+        it('reserves credits for maxResults leads before creating the job', async () => {
+            await createScrapeJob(makeFormData({ query: 'plumbers', maxResults: '30' }));
+            expect(reserveMock).toHaveBeenCalledWith('user_credit', 30, expect.any(String));
+            expect(createMock).toHaveBeenCalled();
+        });
+
+        it('throws INSUFFICIENT_CREDITS and blocks job creation when balance is insufficient', async () => {
+            reserveMock.mockRejectedValueOnce(new Error('INSUFFICIENT_CREDITS'));
+            const createCountBefore = createMock.mock.calls.length;
+
+            await expect(
+                createScrapeJob(makeFormData({ query: 'plumbers', maxResults: '50' }))
+            ).rejects.toThrow('INSUFFICIENT_CREDITS');
+
+            expect(createMock.mock.calls.length).toBe(createCountBefore);
         });
     });
 });

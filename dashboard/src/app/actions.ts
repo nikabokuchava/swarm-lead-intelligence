@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { getOrCreateUser } from '@/lib/user';
 import { checkRateLimit } from '@/lib/rateLimit';
+import { reserveCreditsForJob } from '../../../src/services/creditService';
 
 // Server-side hardening caps — auditable, not reliant on UI input limits.
 const MAX_RESULTS = 500;      // hard cap on leads per job (UI max is advisory only)
@@ -46,11 +47,18 @@ export async function createScrapeJob(formData: FormData) {
     : []
   ).slice(0, MAX_TASKS);
 
+  const jobId = crypto.randomUUID();
+
+  // Atomically reserve credits for maxResults leads before creating the job.
+  // Throws INSUFFICIENT_CREDITS if user balance is insufficient.
+  await reserveCreditsForJob(userId, maxResults, jobId);
+
   // 2. ვქმნით ჯობს კონკრეტული userId-ით
   try {
     console.log(`[ACTION] Attempting to create scrape job for query: "${query}", maxResults: ${maxResults}, userId: ${userId}`);
     const job = await prisma.scrapeJob.create({
       data: {
+        id: jobId,
         query,
         maxResults,
         // Entitlement is NOT trusted from the client. No server-side entitlement
